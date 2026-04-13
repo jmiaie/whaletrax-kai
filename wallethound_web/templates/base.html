@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}WalletHound{% endblock %} — WhaleTrax</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YcnS/1t9TI6lM6DKiOYjkDVoC68XGjN/ii6q"
+          crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <span class="brand-icon">🐕</span> WalletHound
+                <small class="text-muted">by WhaleTrax</small>
+            </a>
+            <button class="navbar-toggler" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#navMain">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navMain">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/' %}active{% endif %}"
+                           href="/">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/big-winners' %}active{% endif %}"
+                           href="/big-winners">🏆 Big Winners</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/consistent-winners' %}active{% endif %}"
+                           href="/consistent-winners">🎯 Consistent</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/compounders' %}active{% endif %}"
+                           href="/compounders">📈 Compounders</a>
+                    </li>
+                </ul>
+                <form class="d-flex" id="walletSearchForm" role="search">
+                    <input class="form-control me-2" type="search" id="walletSearchInput"
+                           placeholder="Wallet address…" aria-label="Search wallet">
+                    <button class="btn btn-outline-warning" type="submit">Hound</button>
+                </form>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container-fluid py-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="text-center text-muted py-3 border-top">
+        <small>WalletHound by WhaleTrax — Polymarket wallet tracker.
+        Wins only, deposits don't count.</small>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+            crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

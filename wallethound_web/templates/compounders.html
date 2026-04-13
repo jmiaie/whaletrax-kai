@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Compounders{% endblock %}
+{% block content %}
+<h1 class="display-6 mb-4">📈 Compounders</h1>
+<p class="lead text-muted">
+    Wallets growing their balances through compounding wins — deposits don't count.
+</p>
+
+<div class="row mb-3">
+    <div class="col-auto">
+        <div class="input-group">
+            <label class="input-group-text">Top</label>
+            <select class="form-select" id="topNSelect">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+            </select>
+            <label class="input-group-text">Min Score</label>
+            <input class="form-control" type="number" id="minScoreInput" value="40" min="0" max="100" step="5" style="width:80px">
+            <label class="input-group-text">Min Growth %</label>
+            <input class="form-control" type="number" id="minGrowthInput" value="10" min="0" step="5" style="width:80px">
+            <button class="btn btn-primary" id="scanCompoundersBtn">Scan</button>
+        </div>
+    </div>
+</div>
+
+<div class="card text-bg-dark">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Wallet / Name</th>
+                        <th class="text-end">Score</th>
+                        <th class="text-end">Organic Growth</th>
+                        <th class="text-end">Organic $</th>
+                        <th class="text-end">Deposits</th>
+                        <th class="text-end">Withdrawals</th>
+                        <th class="text-end">Win Periods</th>
+                        <th class="text-end">Total Profit</th>
+                    </tr>
+                </thead>
+                <tbody id="compoundersBody">
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-5">
+                            <span>Click <strong>Scan</strong> to find compounders.</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+document.getElementById('scanCompoundersBtn').addEventListener('click', async () => {
+    const top = document.getElementById('topNSelect').value;
+    const minScore = document.getElementById('minScoreInput').value;
+    const minGrowth = document.getElementById('minGrowthInput').value;
+    const tbody = document.getElementById('compoundersBody');
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>';
+
+    try {
+        const resp = await fetch(`/api/compounders?top=${top}&min_score=${minScore}&min_growth=${minGrowth}`);
+        const data = await resp.json();
+        if (!data.length) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-5">No compounders found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.map((m, i) => `
+            <tr>
+                <td>${i+1}</td>
+                <td><a href="/wallet/${encodeURIComponent(m.wallet)}" class="text-warning text-decoration-none">${escapeHTML(m.display_name || m.wallet.slice(0,12) + '…')}</a></td>
+                <td class="text-end fw-bold text-primary">${m.compounding_score.toFixed(1)}</td>
+                <td class="text-end ${m.organic_growth_pct >= 0 ? 'text-success' : 'text-danger'}">
+                    ${m.organic_growth_pct >= 0 ? '+' : ''}${m.organic_growth_pct.toFixed(1)}%
+                </td>
+                <td class="text-end ${m.organic_growth_usdc >= 0 ? 'text-success' : 'text-danger'}">
+                    ${m.organic_growth_usdc >= 0 ? '+' : ''}$${m.organic_growth_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}
+                </td>
+                <td class="text-end">$${m.total_deposits_usdc.toLocaleString(undefined, {minimumFractionDigits:0})}</td>
+                <td class="text-end">$${m.total_withdrawals_usdc.toLocaleString(undefined, {minimumFractionDigits:0})}</td>
+                <td class="text-end">${m.num_winning_periods}/${m.num_periods}</td>
+                <td class="text-end ${m.total_profit_usdc >= 0 ? 'text-success' : 'text-danger'}">
+                    ${m.total_profit_usdc >= 0 ? '+' : ''}$${m.total_profit_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}
+                </td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-5">Error: ${escapeHTML(err.message)}</td></tr>`;
+    }
+});
+</script>
+{% endblock %}

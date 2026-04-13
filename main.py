@@ -31,6 +31,16 @@ from src.display import (
     show_market_holders,
     show_wallet_detail,
 )
+from src.wallethound import scanner as wh_scanner
+from src.wallethound.models import WalletTier
+from src.wallethound.display import (
+    show_hound_results,
+    show_hound_wallet_detail,
+    show_consistency_detail,
+    show_compounder_detail,
+)
+from src.wallethound import consistent_winners as cw
+from src.wallethound import compounders as comp
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -232,6 +242,193 @@ def scan_market_cmd(market_id: str, top_holders: int, big_wins: bool) -> None:
             market_big_wins,
             title=f"💰  Big Wins — {question or market_id}",
         )
+
+
+# ── WalletHound commands ──────────────────────────────────────────────────────
+
+@cli.group("wallethound")
+def wallethound_group() -> None:
+    """🐕  WalletHound — track big winners, consistent winners, and compounders."""
+
+
+@wallethound_group.command("scan")
+@click.option(
+    "--top",
+    default=config.LEADERBOARD_TOP_N,
+    show_default=True,
+    help="Number of top leaderboard wallets to scan.",
+    type=click.IntRange(1, 100),
+)
+@click.option(
+    "--tier",
+    default=None,
+    type=click.Choice(["big_winner", "consistent_winner", "compounder"], case_sensitive=False),
+    help="Filter results to a specific tier.",
+)
+def wallethound_scan_cmd(top: int, tier: str | None) -> None:
+    """Scan the leaderboard for big winners, consistent winners, and compounders."""
+    tier_filter = WalletTier(tier) if tier else None
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task(
+            f"🐕 WalletHound scanning top-{top} wallets …", total=None,
+        )
+        results = wh_scanner.hound_leaderboard(top_n=top, tier_filter=tier_filter)
+
+    if not results:
+        print_warning("No wallets matched the WalletHound criteria.")
+        return
+
+    tier_label = tier_filter.value if tier_filter else "all tiers"
+    show_hound_results(
+        results,
+        title=f"🐕  WalletHound — Top-{top} ({tier_label})",
+    )
+    print_info(f"Found {len(results)} wallet(s) matching criteria.")
+
+
+@wallethound_group.command("wallet")
+@click.argument("wallet")
+def wallethound_wallet_cmd(wallet: str) -> None:
+    """Deep-dive WalletHound analysis of a single wallet."""
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task(f"🐕 Analyzing wallet {wallet[:14]}…", total=None)
+        result = wh_scanner.hound_wallet(wallet)
+
+    show_hound_wallet_detail(result)
+
+
+@wallethound_group.command("consistent")
+@click.option(
+    "--top",
+    default=config.LEADERBOARD_TOP_N,
+    show_default=True,
+    help="Number of top leaderboard wallets to scan.",
+    type=click.IntRange(1, 100),
+)
+@click.option(
+    "--min-score",
+    default=50.0,
+    show_default=True,
+    help="Minimum consistency score (0–100) to qualify.",
+    type=float,
+)
+def wallethound_consistent_cmd(top: int, min_score: float) -> None:
+    """Find the most consistent winners on the leaderboard."""
+    from src.wallethound.consistent_winners import score_wallet, qualifies_as_consistent
+    from src.wallethound.models import ConsistencyScore
+
+    raw_entries = pm.get_leaderboard(limit=top)
+    if not raw_entries:
+        print_warning("Leaderboard returned no data.")
+        return
+
+    scores: list[ConsistencyScore] = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task(f"🎯 Scoring consistency for top-{top} wallets …", total=None)
+        from src.wallet_scanner import _parse_leaderboard_entry
+        for idx, raw in enumerate(raw_entries[:top], start=1):
+            entry = _parse_leaderboard_entry(raw, rank=idx)
+            if not entry.proxy_wallet:
+                continue
+            s = score_wallet(entry.proxy_wallet, entry.name)
+            if qualifies_as_consistent(s, min_score=min_score):
+                scores.append(s)
+
+    scores.sort(key=lambda s: s.consistency_score, reverse=True)
+    show_consistency_detail(scores)
+    print_info(f"Found {len(scores)} consistent winner(s) (score ≥ {min_score:.0f}).")
+
+
+@wallethound_group.command("compounders")
+@click.option(
+    "--top",
+    default=config.LEADERBOARD_TOP_N,
+    show_default=True,
+    help="Number of top leaderboard wallets to scan.",
+    type=click.IntRange(1, 100),
+)
+@click.option(
+    "--min-score",
+    default=40.0,
+    show_default=True,
+    help="Minimum compounding score (0–100) to qualify.",
+    type=float,
+)
+@click.option(
+    "--min-growth",
+    default=10.0,
+    show_default=True,
+    help="Minimum organic growth %% to qualify.",
+    type=float,
+)
+def wallethound_compounders_cmd(top: int, min_score: float, min_growth: float) -> None:
+    """Find wallets compounding their balances through wins (not deposits)."""
+    from src.wallethound.compounders import analyse_wallet, qualifies_as_compounder
+    from src.wallethound.models import GrowthMetrics
+
+    raw_entries = pm.get_leaderboard(limit=top)
+    if not raw_entries:
+        print_warning("Leaderboard returned no data.")
+        return
+
+    metrics_list: list[GrowthMetrics] = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task(f"📈 Analyzing compounding for top-{top} wallets …", total=None)
+        from src.wallet_scanner import _parse_leaderboard_entry
+        for idx, raw in enumerate(raw_entries[:top], start=1):
+            entry = _parse_leaderboard_entry(raw, rank=idx)
+            if not entry.proxy_wallet:
+                continue
+            m = analyse_wallet(entry.proxy_wallet, entry.name)
+            if qualifies_as_compounder(m, min_score=min_score, min_growth_pct=min_growth):
+                metrics_list.append(m)
+
+    metrics_list.sort(key=lambda m: m.compounding_score, reverse=True)
+    show_compounder_detail(metrics_list)
+    print_info(f"Found {len(metrics_list)} compounder(s) (score ≥ {min_score:.0f}, growth ≥ {min_growth:.0f}%).")
+
+
+@wallethound_group.command("web")
+@click.option(
+    "--port",
+    default=5000,
+    show_default=True,
+    help="Port to serve the web dashboard on.",
+    type=int,
+)
+@click.option(
+    "--debug/--no-debug",
+    default=False,
+    show_default=True,
+    help="Run Flask in debug mode.",
+)
+def wallethound_web_cmd(port: int, debug: bool) -> None:
+    """Start the WalletHound web dashboard."""
+    from wallethound_web.app import app as flask_app
+
+    print_info(f"Starting WalletHound web dashboard on http://localhost:{port}")
+    flask_app.run(host="0.0.0.0", port=port, debug=debug)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

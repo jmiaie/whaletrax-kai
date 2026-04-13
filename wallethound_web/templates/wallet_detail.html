@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Wallet {{ wallet[:12] }}…{% endblock %}
+{% block content %}
+<h1 class="display-6 mb-4">🐕 Wallet Analysis</h1>
+<p class="text-muted font-monospace">{{ wallet }}</p>
+
+<div id="walletLoading" class="text-center py-5">
+    <div class="spinner-border text-warning"></div>
+    <p class="mt-2 text-muted">Analyzing wallet…</p>
+</div>
+
+<div id="walletContent" style="display:none;">
+    <!-- Summary cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-2">
+            <div class="card text-bg-dark border-warning">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-muted">Tiers</h6>
+                    <p id="wTiers" class="h5">—</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-bg-dark border-success">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-muted">Profit</h6>
+                    <h3 id="wProfit" class="text-success">—</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-bg-dark border-info">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-muted">Win Rate</h6>
+                    <h3 id="wWinRate" class="text-info">—</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-bg-dark border-primary">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-muted">Consistency</h6>
+                    <h3 id="wConsistency" class="text-primary">—</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-bg-dark border-success">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-muted">Organic Growth</h6>
+                    <h3 id="wGrowth" class="text-success">—</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-bg-dark border-secondary">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-muted">Compounding</h6>
+                    <h3 id="wCompounding">—</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail rows -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card text-bg-dark">
+                <div class="card-header">Trading Stats</div>
+                <div class="card-body">
+                    <table class="table table-dark table-sm mb-0">
+                        <tbody>
+                            <tr><td class="text-muted">Total Volume</td><td class="text-end" id="wVolume">—</td></tr>
+                            <tr><td class="text-muted">Total Trades</td><td class="text-end" id="wTrades">—</td></tr>
+                            <tr><td class="text-muted">Big Wins</td><td class="text-end" id="wBigWins">—</td></tr>
+                            <tr><td class="text-muted">Biggest Win</td><td class="text-end" id="wBiggestWin">—</td></tr>
+                            <tr><td class="text-muted">Longest Win Streak</td><td class="text-end" id="wStreak">—</td></tr>
+                            <tr><td class="text-muted">Profit Factor</td><td class="text-end" id="wProfitFactor">—</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card text-bg-dark">
+                <div class="card-header">Balance Accounting</div>
+                <div class="card-body">
+                    <table class="table table-dark table-sm mb-0">
+                        <tbody>
+                            <tr><td class="text-muted">Total Deposits</td><td class="text-end" id="wDeposits">—</td></tr>
+                            <tr><td class="text-muted">Total Withdrawals</td><td class="text-end" id="wWithdrawals">—</td></tr>
+                            <tr><td class="text-muted">Organic Growth $</td><td class="text-end" id="wOrganicUsd">—</td></tr>
+                            <tr><td class="text-muted">Organic Growth %</td><td class="text-end" id="wOrganicPct">—</td></tr>
+                            <tr><td class="text-muted">Compounding Score</td><td class="text-end" id="wCompScore">—</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="walletError" style="display:none;" class="alert alert-danger"></div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+(async () => {
+    const wallet = {{ wallet | tojson }};
+    try {
+        const resp = await fetch(`/api/hound/wallet/${encodeURIComponent(wallet)}`);
+        const d = await resp.json();
+
+        document.getElementById('walletLoading').style.display = 'none';
+        document.getElementById('walletContent').style.display = 'block';
+
+        document.getElementById('wTiers').textContent = d.tier_labels || '—';
+        document.getElementById('wProfit').textContent = `$${d.total_profit_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('wWinRate').textContent = `${d.win_rate_pct.toFixed(1)}%`;
+        document.getElementById('wConsistency').textContent = `${d.consistency_score.toFixed(1)}`;
+        document.getElementById('wGrowth').textContent = `${d.organic_growth_pct >= 0 ? '+' : ''}${d.organic_growth_pct.toFixed(1)}%`;
+        document.getElementById('wCompounding').textContent = `${d.compounding_score.toFixed(1)}`;
+
+        document.getElementById('wVolume').textContent = `$${d.total_volume_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('wTrades').textContent = d.total_trades;
+        document.getElementById('wBigWins').textContent = d.big_win_count;
+        document.getElementById('wBiggestWin').textContent = `$${d.biggest_win_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('wStreak').textContent = d.longest_win_streak;
+        document.getElementById('wProfitFactor').textContent = d.profit_factor.toFixed(2);
+
+        document.getElementById('wDeposits').textContent = `$${d.total_deposits_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('wWithdrawals').textContent = `$${d.total_withdrawals_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('wOrganicUsd').textContent = `${d.organic_growth_usdc >= 0 ? '+' : ''}$${d.organic_growth_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+        document.getElementById('wOrganicPct').textContent = `${d.organic_growth_pct >= 0 ? '+' : ''}${d.organic_growth_pct.toFixed(1)}%`;
+        document.getElementById('wCompScore').textContent = `${d.compounding_score.toFixed(1)}/100`;
+    } catch (err) {
+        document.getElementById('walletLoading').style.display = 'none';
+        const errEl = document.getElementById('walletError');
+        errEl.style.display = 'block';
+        errEl.textContent = `Failed to load wallet data: ${err.message}`;
+    }
+})();
+</script>
+{% endblock %}
