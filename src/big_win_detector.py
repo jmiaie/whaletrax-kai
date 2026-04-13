@@ -104,7 +104,7 @@ def scan_big_wins_for_wallet(wallet: str, display_name: str = "") -> list[BigWin
 
     closed = pm.get_user_closed_positions(wallet)
     for pos in closed:
-        bw = _closed_position_to_big_win(pos, wallet, display_name or wallet[:10] + "…")
+        bw = _closed_position_to_big_win(pos, wallet, display_name or wallet[:12] + "…")
         if bw:
             big_wins.append(bw)
 

@@ -13,6 +13,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+# Consistent wallet address truncation length used throughout the display layer
+WALLET_TRUNCATE_LEN = 12
+
 from .models import BigWin, WalletStats
 
 console = Console()
@@ -33,7 +36,9 @@ def _fmt_ts(ts: int) -> str:
     if ts <= 0:
         return "—"
     try:
-        return datetime.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M UTC")
+        return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).strftime(
+            "%Y-%m-%d %H:%M UTC"
+        )
     except (OSError, OverflowError, ValueError):
         return str(ts)
 
@@ -71,7 +76,7 @@ def show_leaderboard(wallets: list[WalletStats], top_n: Optional[int] = None) ->
     table.add_column("Big Wins", justify="right", width=9)
 
     for w in wallets:
-        label = w.display_name if w.display_name else w.wallet[:12] + "…"
+        label = w.display_name if w.display_name else w.wallet[:WALLET_TRUNCATE_LEN] + "…"
         table.add_row(
             str(w.rank or "—"),
             label,
@@ -135,7 +140,7 @@ def show_big_wins(big_wins: list[BigWin], title: str = "💰  Big Wins") -> None
     table.add_column("Date", justify="right", width=20)
 
     for bw in big_wins:
-        label = bw.display_name if bw.display_name else bw.wallet[:12] + "…"
+        label = bw.display_name if bw.display_name else bw.wallet[:WALLET_TRUNCATE_LEN] + "…"
         table.add_row(
             label,
             bw.market_question or bw.market_id or "—",

@@ -165,7 +165,7 @@ def scan_wallet_cmd(wallet: str, big_wins: bool) -> None:
         transient=True,
         console=console,
     ) as progress:
-        progress.add_task(f"Scanning wallet {wallet[:14]}… …", total=None)
+        progress.add_task(f"Scanning wallet {wallet[:14]}…", total=None)
         stats = ws.scan_wallet(wallet)
         wallet_big_wins = []
         if big_wins:

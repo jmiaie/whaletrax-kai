@@ -252,21 +252,31 @@ def scan_wallet(wallet: str) -> WalletStats:
 
 def _compute_realised_pnl(trades: list[Trade]) -> list[Trade]:
     """
-    Simple FIFO matching: pair buy trades with subsequent sell trades
+    Simple FIFO matching: pair opening (buy) trades with closing (sell) trades
     per (market_id, outcome) to estimate realised P&L.
+
+    Polymarket trade records may use a variety of side labels depending on the
+    API endpoint.  The mapping applied here is:
+      - Opening legs  → side is "buy"  (position entered by purchasing shares)
+      - Closing legs  → side is "sell" (position exited by selling shares back)
+
+    Unknown or empty side values are treated as opening legs as a best-effort
+    fallback (they cannot be matched to a known closing event).
     """
     from collections import defaultdict
 
+    # Bucket opening (buy) trades by (market_id, outcome)
     buys: dict[tuple[str, str], list[Trade]] = defaultdict(list)
-
     for trade in trades:
         key = (trade.market_id, trade.outcome)
-        if trade.side in ("buy", "maker", ""):
+        # Treat "buy" and unknown sides as opening legs
+        if trade.side in ("buy", ""):
             buys[key].append(trade)
 
+    # Match closing (sell) trades against the earliest opening leg
     for trade in trades:
         key = (trade.market_id, trade.outcome)
-        if trade.side in ("sell", "taker") and buys[key]:
+        if trade.side == "sell" and buys[key]:
             buy = buys[key].pop(0)
             cost = buy.amount_usdc
             proceeds = trade.amount_usdc
