@@ -1,0 +1,1 @@
+"""WalletHound web dashboard package."""

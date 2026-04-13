@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="display-6">🐕 WalletHound Dashboard</h1>
+        <p class="lead text-muted">
+            Track Polymarket wallets for big winners, consistent winners, and compounders.
+            <strong>Wins only — deposits don't count.</strong>
+        </p>
+    </div>
+    <div class="col-auto">
+        <div class="input-group">
+            <label class="input-group-text" for="topNSelect">Top</label>
+            <select class="form-select" id="topNSelect">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+            </select>
+            <button class="btn btn-warning" id="scanBtn">Scan</button>
+        </div>
+    </div>
+</div>
+
+<!-- Summary cards -->
+<div class="row g-3 mb-4" id="summaryCards">
+    <div class="col-md-3">
+        <div class="card text-bg-dark border-warning">
+            <div class="card-body text-center">
+                <h6 class="card-title text-muted">Total Tracked</h6>
+                <h2 id="totalTracked" class="text-warning">—</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-dark border-success">
+            <div class="card-body text-center">
+                <h6 class="card-title text-muted">🏆 Big Winners</h6>
+                <h2 id="bigWinnerCount" class="text-success">—</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-dark border-info">
+            <div class="card-body text-center">
+                <h6 class="card-title text-muted">🎯 Consistent</h6>
+                <h2 id="consistentCount" class="text-info">—</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-dark border-primary">
+            <div class="card-body text-center">
+                <h6 class="card-title text-muted">📈 Compounders</h6>
+                <h2 id="compounderCount" class="text-primary">—</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart row -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card text-bg-dark">
+            <div class="card-header">Tier Distribution</div>
+            <div class="card-body">
+                <canvas id="tierChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card text-bg-dark">
+            <div class="card-header">Top Wallets by Profit</div>
+            <div class="card-body">
+                <canvas id="profitChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results table -->
+<div class="card text-bg-dark">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Tracked Wallets</span>
+        <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-outline-warning active tier-filter" data-tier="all">All</button>
+            <button class="btn btn-outline-success tier-filter" data-tier="big_winner">🏆 Big</button>
+            <button class="btn btn-outline-info tier-filter" data-tier="consistent_winner">🎯 Consistent</button>
+            <button class="btn btn-outline-primary tier-filter" data-tier="compounder">📈 Compounder</button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-hover mb-0" id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Wallet / Name</th>
+                        <th>Tiers</th>
+                        <th class="text-end">Profit</th>
+                        <th class="text-end">Win Rate</th>
+                        <th class="text-end">Consistency</th>
+                        <th class="text-end">Organic Growth</th>
+                        <th class="text-end">Deposits</th>
+                        <th class="text-end">Big Wins</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-5">
+                            <div class="spinner-border spinner-border-sm text-warning" role="status" id="loadingSpinner" style="display:none;"></div>
+                            <span id="loadingText">Click <strong>Scan</strong> to start tracking.</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

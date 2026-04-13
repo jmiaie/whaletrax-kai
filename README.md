@@ -156,3 +156,143 @@ whaletrax/
 - Polymarket enforces rate limits on its public APIs. The scanner includes automatic retry with exponential backoff.
 - The scanner reads **closed positions / resolved trades** to compute realised P&L. Open positions show unrealised P&L only.
 - Wallet addresses on Polymarket are proxy (smart contract) wallets, not your EOA. You can find yours in your Polymarket profile URL: `https://polymarket.com/profile/{proxyAddress}`.
+
+---
+
+## WalletHound 🐕
+
+**WalletHound** is WhaleTrax's advanced wallet-tracking feature set that goes beyond basic leaderboard scanning. It identifies three distinct categories of impressive Polymarket wallets:
+
+| Category | Emoji | What it detects |
+|----------|-------|----------------|
+| **Big Winners** | 🏆 | Wallets with large single-trade wins (high profit & ROI) |
+| **Consistent Winners** | 🎯 | Wallets that win reliably — high win rates, long streaks, strong profit factors |
+| **Compounders** | 📈 | Wallets growing balances through compounding wins (deposits don't count) |
+
+### Key Accounting Principle
+
+WalletHound tracks **wins only** — deposits don't count as balance growth. Both deposits and withdrawals are accounted for to ensure accuracy. Organic growth is always separated from external funding.
+
+### WalletHound CLI
+
+All WalletHound commands are grouped under `python main.py wallethound`:
+
+```bash
+# Full scan — find big winners, consistent winners, and compounders
+python main.py wallethound scan --top 20
+
+# Filter by tier
+python main.py wallethound scan --tier big_winner
+python main.py wallethound scan --tier consistent_winner
+python main.py wallethound scan --tier compounder
+
+# Deep-dive on a single wallet
+python main.py wallethound wallet 0xYourPolymarketProxyAddress
+
+# Find consistent winners specifically
+python main.py wallethound consistent --top 50 --min-score 60
+
+# Find compounders specifically
+python main.py wallethound compounders --top 50 --min-score 50 --min-growth 20
+
+# Start the web dashboard
+python main.py wallethound web --port 5000
+
+# Get help
+python main.py wallethound --help
+```
+
+#### `wallethound scan`
+
+Scans the top-N leaderboard wallets through all three detectors and classifies them.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--top N` | 50 | Number of wallets to scan |
+| `--tier` | (all) | Filter: `big_winner`, `consistent_winner`, or `compounder` |
+
+#### `wallethound wallet <address>`
+
+Full WalletHound analysis of a single wallet — shows trading stats, consistency score, organic growth, and deposit/withdrawal accounting.
+
+#### `wallethound consistent`
+
+Finds wallets with the highest consistency scores.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--top N` | 50 | Number of wallets to scan |
+| `--min-score` | 50 | Minimum consistency score (0–100) |
+
+The consistency score is a composite of:
+- **Win rate** (40%) — percentage of winning trades
+- **Profit factor** (25%) — gross wins / gross losses
+- **Longest win streak** (20%) — consecutive winning trades
+- **Trade count confidence** (15%) — more trades = more statistically meaningful
+
+#### `wallethound compounders`
+
+Finds wallets growing their balances through compounding wins.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--top N` | 50 | Number of wallets to scan |
+| `--min-score` | 40 | Minimum compounding score (0–100) |
+| `--min-growth` | 10 | Minimum organic growth % |
+
+#### `wallethound web`
+
+Starts the WalletHound web dashboard.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--port` | 5000 | Port to serve the dashboard on |
+| `--debug / --no-debug` | `--no-debug` | Enable Flask debug mode |
+
+### WalletHound Web Dashboard
+
+The web dashboard provides a browser-based interface with:
+
+- **Dashboard** — overview of all tracked wallets with summary cards, tier distribution chart, and profit chart
+- **Big Winners** — table of the largest single-trade wins
+- **Consistent Winners** — table of the most consistent winning wallets
+- **Compounders** — table of wallets growing through wins (deposits excluded)
+- **Wallet Detail** — deep-dive analysis of any wallet address
+- **REST API** — JSON endpoints for programmatic access
+
+#### REST API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/hound/scan?top=N&tier=...` | GET | Full WalletHound scan |
+| `/api/hound/wallet/<address>` | GET | Single wallet analysis |
+| `/api/big-winners?top=N` | GET | Big-winner trades |
+| `/api/consistent-winners?top=N&min_score=50` | GET | Consistent winners |
+| `/api/compounders?top=N&min_score=40&min_growth=10` | GET | Compounders |
+
+### WalletHound Project Structure
+
+```
+src/wallethound/
+├── __init__.py
+├── models.py              # WalletHound data models
+├── deposit_tracker.py     # Deposit/withdrawal detection & accounting
+├── consistent_winners.py  # Consistency scoring engine
+├── compounders.py         # Compounder detection (organic growth only)
+├── scanner.py             # Main orchestrator
+└── display.py             # Rich terminal display helpers
+
+wallethound_web/
+├── __init__.py
+├── app.py                 # Flask application & REST API
+├── templates/
+│   ├── base.html          # Base layout with navbar
+│   ├── index.html         # Dashboard landing page
+│   ├── big_winners.html   # Big winners page
+│   ├── consistent_winners.html
+│   ├── compounders.html
+│   └── wallet_detail.html # Single wallet deep-dive
+└── static/
+    ├── css/style.css      # Custom styles
+    └── js/dashboard.js    # Dashboard interactivity & charts
+```

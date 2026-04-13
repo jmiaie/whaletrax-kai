@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Consistent Winners{% endblock %}
+{% block content %}
+<h1 class="display-6 mb-4">🎯 Consistent Winners</h1>
+<p class="lead text-muted">
+    Wallets with the highest consistency scores — steady win rates, long streaks, and strong profit factors.
+</p>
+
+<div class="row mb-3">
+    <div class="col-auto">
+        <div class="input-group">
+            <label class="input-group-text">Top</label>
+            <select class="form-select" id="topNSelect">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+            </select>
+            <label class="input-group-text">Min Score</label>
+            <input class="form-control" type="number" id="minScoreInput" value="50" min="0" max="100" step="5" style="width:80px">
+            <button class="btn btn-info" id="scanConsistentBtn">Scan</button>
+        </div>
+    </div>
+</div>
+
+<div class="card text-bg-dark">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Wallet / Name</th>
+                        <th class="text-end">Score</th>
+                        <th class="text-end">Win Rate</th>
+                        <th class="text-end">Trades</th>
+                        <th class="text-end">Win Streak</th>
+                        <th class="text-end">Profit Factor</th>
+                        <th class="text-end">Avg Win</th>
+                        <th class="text-end">Avg Loss</th>
+                        <th class="text-end">Profit</th>
+                    </tr>
+                </thead>
+                <tbody id="consistentBody">
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-5">
+                            <span>Click <strong>Scan</strong> to find consistent winners.</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+{% block extra_scripts %}
+<script>
+document.getElementById('scanConsistentBtn').addEventListener('click', async () => {
+    const top = document.getElementById('topNSelect').value;
+    const minScore = document.getElementById('minScoreInput').value;
+    const tbody = document.getElementById('consistentBody');
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-5"><div class="spinner-border text-info"></div></td></tr>';
+
+    try {
+        const resp = await fetch(`/api/consistent-winners?top=${top}&min_score=${minScore}`);
+        const data = await resp.json();
+        if (!data.length) {
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-5">No consistent winners found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.map((s, i) => `
+            <tr>
+                <td>${i+1}</td>
+                <td><a href="/wallet/${s.wallet}" class="text-warning text-decoration-none">${s.display_name || s.wallet.slice(0,12) + '…'}</a></td>
+                <td class="text-end fw-bold text-info">${s.consistency_score.toFixed(1)}</td>
+                <td class="text-end">${s.win_rate_pct.toFixed(1)}%</td>
+                <td class="text-end">${s.total_resolved_trades}</td>
+                <td class="text-end">${s.longest_win_streak}</td>
+                <td class="text-end">${s.profit_factor.toFixed(2)}</td>
+                <td class="text-end">$${s.avg_win_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td class="text-end">$${s.avg_loss_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td class="text-end ${s.total_profit_usdc >= 0 ? 'text-success' : 'text-danger'}">
+                    ${s.total_profit_usdc >= 0 ? '+' : ''}$${s.total_profit_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}
+                </td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger py-5">Error: ${err.message}</td></tr>`;
+    }
+});
+</script>
+{% endblock %}

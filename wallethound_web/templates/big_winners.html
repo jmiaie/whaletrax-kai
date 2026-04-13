@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Big Winners{% endblock %}
+{% block content %}
+<h1 class="display-6 mb-4">🏆 Big Winners</h1>
+<p class="lead text-muted">
+    Single trades with the highest profit and ROI across the Polymarket leaderboard.
+</p>
+
+<div class="row mb-3">
+    <div class="col-auto">
+        <div class="input-group">
+            <label class="input-group-text">Top</label>
+            <select class="form-select" id="topNSelect">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+            </select>
+            <button class="btn btn-success" id="scanBigWinsBtn">Scan</button>
+        </div>
+    </div>
+</div>
+
+<div class="card text-bg-dark">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Wallet / Name</th>
+                        <th>Market</th>
+                        <th>Outcome</th>
+                        <th class="text-end">Cost</th>
+                        <th class="text-end">Profit</th>
+                        <th class="text-end">ROI</th>
+                    </tr>
+                </thead>
+                <tbody id="bigWinsBody">
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-5">
+                            <span id="loadingText">Click <strong>Scan</strong> to find big winners.</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+{% block extra_scripts %}
+<script>
+document.getElementById('scanBigWinsBtn').addEventListener('click', async () => {
+    const top = document.getElementById('topNSelect').value;
+    const tbody = document.getElementById('bigWinsBody');
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-5"><div class="spinner-border text-success"></div></td></tr>';
+
+    try {
+        const resp = await fetch(`/api/big-winners?top=${top}`);
+        const data = await resp.json();
+        if (!data.length) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-5">No big winners found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.map((bw, i) => `
+            <tr>
+                <td>${i+1}</td>
+                <td><a href="/wallet/${bw.wallet}" class="text-warning text-decoration-none">${bw.display_name || bw.wallet.slice(0,12) + '…'}</a></td>
+                <td class="text-truncate" style="max-width:300px">${bw.market_question || '—'}</td>
+                <td>${bw.outcome || '—'}</td>
+                <td class="text-end">$${bw.trade_size_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td class="text-end text-success fw-bold">+$${bw.profit_usdc.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td class="text-end text-success">+${bw.roi_pct.toFixed(1)}%</td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-5">Error: ${err.message}</td></tr>`;
+    }
+});
+</script>
+{% endblock %}
