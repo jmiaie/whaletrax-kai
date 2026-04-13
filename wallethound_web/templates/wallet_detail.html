@@ -6,7 +6,7 @@
 
 <div id="walletLoading" class="text-center py-5">
     <div class="spinner-border text-warning"></div>
-    <p class="mt-2 text-muted">Analysing wallet…</p>
+    <p class="mt-2 text-muted">Analyzing wallet…</p>
 </div>
 
 <div id="walletContent" style="display:none;">
@@ -105,9 +105,9 @@
 {% block extra_scripts %}
 <script>
 (async () => {
-    const wallet = "{{ wallet }}";
+    const wallet = {{ wallet | tojson }};
     try {
-        const resp = await fetch(`/api/hound/wallet/${wallet}`);
+        const resp = await fetch(`/api/hound/wallet/${encodeURIComponent(wallet)}`);
         const d = await resp.json();
 
         document.getElementById('walletLoading').style.display = 'none';

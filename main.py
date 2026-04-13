@@ -302,7 +302,7 @@ def wallethound_wallet_cmd(wallet: str) -> None:
         transient=True,
         console=console,
     ) as progress:
-        progress.add_task(f"🐕 Analysing wallet {wallet[:14]}…", total=None)
+        progress.add_task(f"🐕 Analyzing wallet {wallet[:14]}…", total=None)
         result = wh_scanner.hound_wallet(wallet)
 
     show_hound_wallet_detail(result)
@@ -394,7 +394,7 @@ def wallethound_compounders_cmd(top: int, min_score: float, min_growth: float) -
         transient=True,
         console=console,
     ) as progress:
-        progress.add_task(f"📈 Analysing compounding for top-{top} wallets …", total=None)
+        progress.add_task(f"📈 Analyzing compounding for top-{top} wallets …", total=None)
         from src.wallet_scanner import _parse_leaderboard_entry
         for idx, raw in enumerate(raw_entries[:top], start=1):
             entry = _parse_leaderboard_entry(raw, rank=idx)

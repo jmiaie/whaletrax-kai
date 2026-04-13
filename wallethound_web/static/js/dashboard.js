@@ -10,6 +10,12 @@ let profitChart = null;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+
 function fmtUSD(val) {
     const sign = val >= 0 ? '+' : '';
     return `${sign}$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -49,8 +55,8 @@ function renderResults(data) {
         <tr>
             <td>${i + 1}</td>
             <td>
-                <a href="/wallet/${r.wallet}" class="text-warning text-decoration-none">
-                    ${r.display_name || r.wallet.slice(0, 12) + '…'}
+                <a href="/wallet/${encodeURIComponent(r.wallet)}" class="text-warning text-decoration-none">
+                    ${escapeHTML(r.display_name || r.wallet.slice(0, 12) + '…')}
                 </a>
             </td>
             <td>${tierBadges(r.tiers)}</td>
@@ -154,10 +160,11 @@ async function runScan() {
     const loadText = document.getElementById('loadingText');
 
     if (tbody) {
+        const safeTop = escapeHTML(String(top));
         tbody.innerHTML = `
             <tr><td colspan="9" class="text-center py-5">
                 <div class="spinner-border text-warning"></div>
-                <p class="mt-2 text-muted">Scanning top-${top} wallets… this may take a moment.</p>
+                <p class="mt-2 text-muted">Scanning top-${safeTop} wallets… this may take a moment.</p>
             </td></tr>`;
     }
 
@@ -169,7 +176,7 @@ async function runScan() {
         updateCharts(allResults);
     } catch (err) {
         if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-5">Error: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-5">Error: ${escapeHTML(err.message)}</td></tr>`;
         }
     }
 }
@@ -201,7 +208,7 @@ function setupWalletSearch() {
             const input = document.getElementById('walletSearchInput');
             const addr = (input.value || '').trim();
             if (addr) {
-                window.location.href = `/wallet/${addr}`;
+                window.location.href = `/wallet/${encodeURIComponent(addr)}`;
             }
         });
     }
