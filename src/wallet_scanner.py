@@ -13,101 +13,17 @@ from typing import Optional
 
 from . import config, polymarket_client as pm
 from .models import LeaderboardEntry, Position, Trade, WalletStats
+from .parsers import (
+    _safe_float,
+    parse_leaderboard_entry,
+    parse_position,
+    parse_trade,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _safe_float(val: object, default: float = 0.0) -> float:
-    try:
-        return float(val)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return default
-
-
-def _parse_leaderboard_entry(raw: dict, rank: int) -> LeaderboardEntry:
-    return LeaderboardEntry(
-        rank=rank,
-        name=raw.get("name") or raw.get("displayName") or "",
-        proxy_wallet=(
-            raw.get("proxyWallet")
-            or raw.get("proxy_wallet")
-            or raw.get("address")
-            or raw.get("user")
-            or ""
-        ),
-        profit_usdc=_safe_float(raw.get("profitAndLoss") or raw.get("profit") or raw.get("pnl")),
-        volume_usdc=_safe_float(raw.get("volume") or raw.get("volumeTraded")),
-        trades=int(_safe_float(raw.get("trades") or raw.get("numTrades"))),
-    )
-
-
-def _parse_trade(raw: dict, wallet: str) -> Optional[Trade]:
-    """Convert a raw API trade dict into a Trade model. Returns None if unparseable."""
-    trade_id = str(raw.get("id") or raw.get("trade_id") or raw.get("tradeId") or "")
-    market_id = str(
-        raw.get("market") or raw.get("marketId") or raw.get("conditionId") or ""
-    )
-    outcome = str(raw.get("outcome") or raw.get("side") or raw.get("outcomeIndex") or "")
-    side = str(raw.get("type") or raw.get("tradeType") or raw.get("side") or "").lower()
-    size = _safe_float(raw.get("size") or raw.get("shares"))
-    price = _safe_float(raw.get("price") or raw.get("avgPrice"))
-    amount = _safe_float(raw.get("amount") or raw.get("usdcAmount") or raw.get("value"))
-    if amount == 0.0 and size > 0 and price > 0:
-        amount = size * price
-    timestamp = int(_safe_float(raw.get("timestamp") or raw.get("createdAt") or raw.get("time")))
-    question = str(raw.get("question") or raw.get("title") or raw.get("marketTitle") or "")
-
-    if not market_id and not question:
-        return None
-
-    return Trade(
-        trade_id=trade_id,
-        wallet=wallet,
-        market_id=market_id,
-        market_question=question,
-        outcome=outcome,
-        side=side,
-        size=size,
-        price=price,
-        amount_usdc=amount,
-        timestamp=timestamp,
-    )
-
-
-def _parse_position(raw: dict, wallet: str) -> Optional[Position]:
-    market_id = str(
-        raw.get("market") or raw.get("marketId") or raw.get("conditionId") or ""
-    )
-    outcome = str(raw.get("outcome") or raw.get("outcomeIndex") or "")
-    size = _safe_float(raw.get("size") or raw.get("shares"))
-    avg_price = _safe_float(raw.get("avgPrice") or raw.get("averagePrice") or raw.get("price"))
-    current_price = _safe_float(
-        raw.get("currentPrice") or raw.get("lastPrice") or raw.get("price")
-    )
-    cost = _safe_float(raw.get("cost") or raw.get("invested"))
-    if cost == 0.0 and size > 0 and avg_price > 0:
-        cost = size * avg_price
-    value = _safe_float(raw.get("value") or raw.get("currentValue"))
-    if value == 0.0 and size > 0 and current_price > 0:
-        value = size * current_price
-    question = str(raw.get("question") or raw.get("title") or raw.get("marketTitle") or "")
-
-    return Position(
-        wallet=wallet,
-        market_id=market_id,
-        market_question=question,
-        outcome=outcome,
-        size=size,
-        avg_price=avg_price,
-        current_price=current_price,
-        value_usdc=value,
-        cost_usdc=cost,
-        unrealised_pnl=value - cost,
-        is_closed=bool(raw.get("isClosed") or raw.get("closed")),
-    )
-
+# ── Internal Helpers ──────────────────────────────────────────────────────────
 
 def _compute_stats_from_trades(wallet: str, trades: list[Trade]) -> WalletStats:
     """Aggregate a list of Trade objects into WalletStats."""
@@ -133,7 +49,7 @@ def _compute_stats_from_trades(wallet: str, trades: list[Trade]) -> WalletStats:
     return stats
 
 
-def _enrich_stats_from_closed_positions(stats: WalletStats, positions: list[dict]) -> WalletStats:
+def _enrich_stats_from_closed_positions(stats: WalletStats, positions: list[dict[str, Any]]) -> WalletStats:
     """
     Use the richer closed-positions endpoint (which already contains realised P&L)
     when available, to fill in WalletStats more accurately.
@@ -194,7 +110,7 @@ def scan_leaderboard(top_n: int = config.LEADERBOARD_TOP_N) -> list[WalletStats]
 
     results: list[WalletStats] = []
     for idx, raw in enumerate(raw_entries[:top_n], start=1):
-        entry = _parse_leaderboard_entry(raw, rank=idx)
+        entry = parse_leaderboard_entry(raw, rank=idx)
         if not entry.proxy_wallet:
             continue
 
@@ -230,7 +146,7 @@ def scan_wallet(wallet: str) -> WalletStats:
     # Fall back to raw trades if we got nothing useful
     if stats.total_trades == 0:
         raw_trades = pm.get_user_trades(wallet, limit=config.WALLET_SCAN_MAX_TRADES)
-        trades = [t for raw in raw_trades if (t := _parse_trade(raw, wallet)) is not None]
+        trades = [t for raw in raw_trades if (t := parse_trade(raw, wallet)) is not None]
         # Compute P&L from buy→sell pairs grouped by market+outcome
         trades = _compute_realised_pnl(trades)
         stats = _compute_stats_from_trades(wallet, trades)
@@ -283,5 +199,3 @@ def _compute_realised_pnl(trades: list[Trade]) -> list[Trade]:
             trade.profit_usdc = proceeds - cost
             if cost > 0:
                 trade.roi_pct = ((proceeds - cost) / cost) * 100
-
-    return trades

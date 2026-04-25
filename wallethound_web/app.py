@@ -27,9 +27,14 @@ from src import config
 from src.wallethound import scanner as wh_scanner
 from src.wallethound import consistent_winners as cw
 from src.wallethound import compounders as comp
-from src.wallethound.models import WalletTier
+from src.models import (
+    ConsistencyScore,
+    GrowthMetrics,
+    HoundResult,
+    WalletTier,
+)
 from src.big_win_detector import scan_big_wins_for_wallet
-from src.wallet_scanner import _parse_leaderboard_entry
+from src.parsers import _parse_leaderboard_entry
 from src import polymarket_client as pm
 
 logging.basicConfig(level=logging.WARNING)
@@ -53,7 +58,7 @@ def _get_top_n() -> int:
     return max(1, min(n, 100))
 
 
-def _hound_result_to_dict(r) -> dict:
+def _hound_result_to_dict(r: HoundResult) -> dict[str, Any]:
     return {
         "wallet": r.wallet,
         "display_name": r.display_name,
@@ -76,7 +81,7 @@ def _hound_result_to_dict(r) -> dict:
     }
 
 
-def _consistency_to_dict(s) -> dict:
+def _consistency_to_dict(s: ConsistencyScore) -> dict[str, Any]:
     return {
         "wallet": s.wallet,
         "display_name": s.display_name,
@@ -91,7 +96,7 @@ def _consistency_to_dict(s) -> dict:
     }
 
 
-def _growth_to_dict(m) -> dict:
+def _growth_to_dict(m: GrowthMetrics) -> dict[str, Any]:
     return {
         "wallet": m.wallet,
         "display_name": m.display_name,
@@ -159,7 +164,7 @@ def api_consistent_winners():
     top_n = _get_top_n()
     min_score = float(request.args.get("min_score", 50.0))
     raw_entries = pm.get_leaderboard(limit=top_n)
-    scores = []
+    scores: list[ConsistencyScore] = []
     for idx, raw in enumerate(raw_entries[:top_n], start=1):
         entry = _parse_leaderboard_entry(raw, rank=idx)
         if not entry.proxy_wallet:
@@ -178,7 +183,7 @@ def api_compounders():
     min_score = float(request.args.get("min_score", 40.0))
     min_growth = float(request.args.get("min_growth", 10.0))
     raw_entries = pm.get_leaderboard(limit=top_n)
-    metrics_list = []
+    metrics_list: list[GrowthMetrics] = []
     for idx, raw in enumerate(raw_entries[:top_n], start=1):
         entry = _parse_leaderboard_entry(raw, rank=idx)
         if not entry.proxy_wallet:

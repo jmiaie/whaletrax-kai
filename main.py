@@ -32,7 +32,7 @@ from src.display import (
     show_wallet_detail,
 )
 from src.wallethound import scanner as wh_scanner
-from src.wallethound.models import WalletTier
+from src.models import WalletTier
 from src.wallethound.display import (
     show_hound_results,
     show_hound_wallet_detail,
@@ -89,6 +89,7 @@ def scan_leaderboard_cmd(top: int, big_wins: bool) -> None:
         if big_wins:
             progress.update(task, description="Scanning big wins …")
             raw_entries = pm.get_leaderboard(limit=top)
+            from src.parsers import parse_leaderboard_entry
             for idx, (wallet_stats, raw) in enumerate(zip(wallets, raw_entries), start=1):
                 entry_wins = bwd.scan_big_wins_for_wallet(
                     wallet_stats.wallet, wallet_stats.display_name
@@ -225,7 +226,7 @@ def scan_market_cmd(market_id: str, top_holders: int, big_wins: bool) -> None:
             )
 
         holders = pm.get_market_holders(market_id, limit=top_holders)
-        market_big_wins: list = []
+        market_big_wins: list[BigWin] = []
         if big_wins:
             market_big_wins = bwd.scan_big_wins_for_market(market_id, top_holders=top_holders)
 
@@ -326,7 +327,7 @@ def wallethound_wallet_cmd(wallet: str) -> None:
 def wallethound_consistent_cmd(top: int, min_score: float) -> None:
     """Find the most consistent winners on the leaderboard."""
     from src.wallethound.consistent_winners import score_wallet, qualifies_as_consistent
-    from src.wallethound.models import ConsistencyScore
+    from src.models import ConsistencyScore
 
     raw_entries = pm.get_leaderboard(limit=top)
     if not raw_entries:
@@ -341,9 +342,9 @@ def wallethound_consistent_cmd(top: int, min_score: float) -> None:
         console=console,
     ) as progress:
         progress.add_task(f"🎯 Scoring consistency for top-{top} wallets …", total=None)
-        from src.wallet_scanner import _parse_leaderboard_entry
+        from src.parsers import parse_leaderboard_entry
         for idx, raw in enumerate(raw_entries[:top], start=1):
-            entry = _parse_leaderboard_entry(raw, rank=idx)
+            entry = parse_leaderboard_entry(raw, rank=idx)
             if not entry.proxy_wallet:
                 continue
             s = score_wallet(entry.proxy_wallet, entry.name)
@@ -380,7 +381,7 @@ def wallethound_consistent_cmd(top: int, min_score: float) -> None:
 def wallethound_compounders_cmd(top: int, min_score: float, min_growth: float) -> None:
     """Find wallets compounding their balances through wins (not deposits)."""
     from src.wallethound.compounders import analyse_wallet, qualifies_as_compounder
-    from src.wallethound.models import GrowthMetrics
+    from src.models import GrowthMetrics
 
     raw_entries = pm.get_leaderboard(limit=top)
     if not raw_entries:
@@ -395,9 +396,9 @@ def wallethound_compounders_cmd(top: int, min_score: float, min_growth: float) -
         console=console,
     ) as progress:
         progress.add_task(f"📈 Analyzing compounding for top-{top} wallets …", total=None)
-        from src.wallet_scanner import _parse_leaderboard_entry
+        from src.parsers import parse_leaderboard_entry
         for idx, raw in enumerate(raw_entries[:top], start=1):
-            entry = _parse_leaderboard_entry(raw, rank=idx)
+            entry = parse_leaderboard_entry(raw, rank=idx)
             if not entry.proxy_wallet:
                 continue
             m = analyse_wallet(entry.proxy_wallet, entry.name)

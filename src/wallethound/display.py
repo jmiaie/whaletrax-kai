@@ -13,7 +13,8 @@ from rich.table import Table
 from rich.text import Text
 
 from ..display import _fmt_pct, _fmt_usdc, _profit_style, console, WALLET_TRUNCATE_LEN
-from .models import ConsistencyScore, GrowthMetrics, HoundResult, WalletTier
+from ..models import WalletStats
+from ..models import ConsistencyScore, GrowthMetrics, HoundResult, WalletTier
 
 
 # ── Hound results table ──────────────────────────────────────────────────────

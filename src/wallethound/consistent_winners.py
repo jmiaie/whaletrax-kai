@@ -21,7 +21,7 @@ import math
 
 from .. import polymarket_client as pm
 from ..wallet_scanner import _safe_float
-from .models import ConsistencyScore
+from ..models import ConsistencyScore
 
 logger = logging.getLogger(__name__)
 

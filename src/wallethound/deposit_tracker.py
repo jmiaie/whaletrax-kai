@@ -21,11 +21,11 @@ as a deposit; any USDC-out that is not a share purchase is a withdrawal.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from .. import polymarket_client as pm
 from ..wallet_scanner import _safe_float
-from .models import BalanceSnapshot, DepositWithdrawal
+from ..models import BalanceSnapshot, DepositWithdrawal
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ _TRADE_TYPES = frozenset({
 })
 
 
-def _classify_activity(raw: dict) -> Optional[DepositWithdrawal]:
+def _classify_activity(raw: dict[str, Any]) -> Optional[DepositWithdrawal]:
     """
     Classify a single activity record as a deposit, withdrawal, or None
     (trade-related / unrecognised).
@@ -149,7 +149,7 @@ def compute_organic_growth(
 
 def build_balance_snapshots(
     wallet: str,
-    closed_positions: list[dict],
+    closed_positions: list[dict[str, Any]],
     deposit_events: list[DepositWithdrawal],
 ) -> list[BalanceSnapshot]:
     """

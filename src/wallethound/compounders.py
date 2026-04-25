@@ -29,7 +29,7 @@ from .deposit_tracker import (
     compute_totals,
     get_deposits_withdrawals,
 )
-from .models import GrowthMetrics
+from ..models import GrowthMetrics
 
 logger = logging.getLogger(__name__)
 

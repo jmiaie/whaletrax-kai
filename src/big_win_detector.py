@@ -14,12 +14,12 @@ from typing import Optional
 
 from . import config, polymarket_client as pm
 from .models import BigWin, WalletStats
-from .wallet_scanner import _parse_leaderboard_entry, _safe_float
+from .parsers import _parse_leaderboard_entry, _safe_float
 
 logger = logging.getLogger(__name__)
 
 
-def _closed_position_to_big_win(raw: dict, wallet: str, display_name: str) -> Optional[BigWin]:
+def _closed_position_to_big_win(raw: dict[str, Any], wallet: str, display_name: str) -> Optional[BigWin]:
     """
     Try to extract a BigWin from a single raw closed-position dict.
     Returns None if the position doesn't qualify.
@@ -56,7 +56,7 @@ def _closed_position_to_big_win(raw: dict, wallet: str, display_name: str) -> Op
     return None
 
 
-def _leaderboard_wallet_to_big_wins(entry_raw: dict, rank: int) -> list[BigWin]:
+def _leaderboard_wallet_to_big_wins(entry_raw: dict[str, Any], rank: int) -> list[BigWin]:
     """
     For a single leaderboard entry: fetch their closed positions and
     surface any that qualify as big wins.

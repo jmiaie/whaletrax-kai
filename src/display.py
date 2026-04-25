@@ -5,7 +5,7 @@ Rich terminal display helpers for WhaleTrax.
 from __future__ import annotations
 
 import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from rich import box
 from rich.console import Console
@@ -17,38 +17,9 @@ from rich.text import Text
 WALLET_TRUNCATE_LEN = 12
 
 from .models import BigWin, WalletStats
+from .utils import fmt_usdc, fmt_pct, fmt_ts, profit_style
 
 console = Console()
-
-
-def _fmt_usdc(val: float) -> str:
-    """Format a USDC value with commas and 2 decimal places."""
-    sign = "+" if val > 0 else ""
-    return f"{sign}${val:,.2f}"
-
-
-def _fmt_pct(val: float) -> str:
-    sign = "+" if val > 0 else ""
-    return f"{sign}{val:.1f}%"
-
-
-def _fmt_ts(ts: int) -> str:
-    if ts <= 0:
-        return "—"
-    try:
-        return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).strftime(
-            "%Y-%m-%d %H:%M UTC"
-        )
-    except (OSError, OverflowError, ValueError):
-        return str(ts)
-
-
-def _profit_style(val: float) -> str:
-    if val > 0:
-        return "bold green"
-    if val < 0:
-        return "bold red"
-    return "dim"
 
 
 # ── Leaderboard table ─────────────────────────────────────────────────────────
@@ -80,11 +51,11 @@ def show_leaderboard(wallets: list[WalletStats], top_n: Optional[int] = None) ->
         table.add_row(
             str(w.rank or "—"),
             label,
-            Text(_fmt_usdc(w.total_profit_usdc), style=_profit_style(w.total_profit_usdc)),
+            Text(fmt_usdc(w.total_profit_usdc), style=profit_style(w.total_profit_usdc)),
             f"${w.total_volume_usdc:,.0f}",
             str(w.total_trades),
-            _fmt_pct(w.win_rate_pct) if w.win_rate_pct else "—",
-            Text(_fmt_pct(w.net_roi_pct), style=_profit_style(w.net_roi_pct)),
+            fmt_pct(w.win_rate_pct) if w.win_rate_pct else "—",
+            Text(fmt_pct(w.net_roi_pct), style=profit_style(w.net_roi_pct)),
             str(w.big_win_count) if w.big_win_count else "—",
         )
 
@@ -100,15 +71,15 @@ def show_wallet_detail(stats: WalletStats) -> None:
 
     lines = [
         f"[dim]Address:[/dim]        {stats.wallet}",
-        f"[dim]Total Profit:[/dim]   {Text(_fmt_usdc(stats.total_profit_usdc), style=_profit_style(stats.total_profit_usdc))}",
+        f"[dim]Total Profit:[/dim]   {Text(fmt_usdc(stats.total_profit_usdc), style=profit_style(stats.total_profit_usdc))}",
         f"[dim]Total Volume:[/dim]   ${stats.total_volume_usdc:,.2f}",
-        f"[dim]Net ROI:[/dim]        {Text(_fmt_pct(stats.net_roi_pct), style=_profit_style(stats.net_roi_pct))}",
+        f"[dim]Net ROI:[/dim]        {Text(fmt_pct(stats.net_roi_pct), style=profit_style(stats.net_roi_pct))}",
         f"[dim]Trades:[/dim]         {stats.total_trades}",
         f"[dim]Wins / Losses:[/dim]  {stats.winning_trades} / {stats.losing_trades}",
-        f"[dim]Win Rate:[/dim]       {_fmt_pct(stats.win_rate_pct)}",
-        f"[dim]Avg Trade ROI:[/dim]  {_fmt_pct(stats.avg_roi_pct)}",
-        f"[dim]Biggest Win:[/dim]    [green]{_fmt_usdc(stats.biggest_win_usdc)}[/green]",
-        f"[dim]Biggest Loss:[/dim]   [red]{_fmt_usdc(stats.biggest_loss_usdc)}[/red]",
+        f"[dim]Win Rate:[/dim]       {fmt_pct(stats.win_rate_pct)}",
+        f"[dim]Avg Trade ROI:[/dim]  {fmt_pct(stats.avg_roi_pct)}",
+        f"[dim]Biggest Win:[/dim]    [green]{fmt_usdc(stats.biggest_win_usdc)}[/green]",
+        f"[dim]Biggest Loss:[/dim]   [red]{fmt_usdc(stats.biggest_loss_usdc)}[/red]",
         f"[dim]Big Wins:[/dim]       {stats.big_win_count}",
     ]
 
@@ -146,9 +117,9 @@ def show_big_wins(big_wins: list[BigWin], title: str = "💰  Big Wins") -> None
             bw.market_question or bw.market_id or "—",
             bw.outcome or "—",
             f"${bw.trade_size_usdc:,.2f}",
-            Text(_fmt_usdc(bw.profit_usdc), style="bold green"),
-            Text(_fmt_pct(bw.roi_pct), style="bold green"),
-            _fmt_ts(bw.timestamp),
+            Text(fmt_usdc(bw.profit_usdc), style="bold green"),
+            Text(fmt_pct(bw.roi_pct), style="bold green"),
+            fmt_ts(bw.timestamp),
         )
 
     console.print(table)
@@ -156,7 +127,7 @@ def show_big_wins(big_wins: list[BigWin], title: str = "💰  Big Wins") -> None
 
 # ── Market holders table ───────────────────────────────────────────────────────
 
-def show_market_holders(holders: list[dict], market_question: str = "") -> None:
+def show_market_holders(holders: list[dict[str, Any]], market_question: str = "") -> None:
     """Print top holders for a market."""
     title = f"🏦  Top Holders — {market_question}" if market_question else "🏦  Top Holders"
     table = Table(title=title, box=box.ROUNDED, header_style="bold cyan", border_style="magenta")

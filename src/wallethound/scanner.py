@@ -10,10 +10,10 @@ from typing import Optional
 
 from .. import config, polymarket_client as pm
 from ..big_win_detector import scan_big_wins_for_wallet
-from ..wallet_scanner import _parse_leaderboard_entry, _safe_float
+from ..parsers import _parse_leaderboard_entry, _safe_float
 from . import compounders, consistent_winners
 from .deposit_tracker import compute_totals, get_deposits_withdrawals
-from .models import HoundResult, WalletTier
+from ..models import HoundResult, WalletTier
 
 logger = logging.getLogger(__name__)
 
