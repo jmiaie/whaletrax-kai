@@ -10,7 +10,8 @@ from src.wallet_scanner import _safe_float
 from alerts.polyshark_alert import make_trade_alert_card
 
 DB_PATH = '/home/ubuntu/.openclaw/workspace/ompa_vault/org/polyshark-alerts/polyshark.db'
-BOT_TOKEN = os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAEqZ3RdLWeWsSl6iCA1CzwwMZ69rcknNVc')
+# Token for @oc_a7bot (PolysharkBot) — active in Alert Group
+BOT_TOKEN = '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'
 
 def mask_address(addr):
     if not addr: return '0x....'

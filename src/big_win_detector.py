@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from . import config, polymarket_client as pm
 from .models import BigWin, WalletStats
-from .parsers import _parse_leaderboard_entry, _safe_float
+from .wallet_scanner import _parse_leaderboard_entry, _safe_float
 
 logger = logging.getLogger(__name__)
 

@@ -26,7 +26,7 @@ def _safe_float(val: object, default: float = 0.0) -> float:
         return default
 
 
-def _parse_leaderboard_entry(raw: dict, rank: int) -> LeaderboardEntry:
+def _parse_leaderboard_entry(raw: dict[str, Any], rank: int) -> LeaderboardEntry:
     return LeaderboardEntry(
         rank=rank,
         name=raw.get("name") or raw.get("displayName") or "",
@@ -43,7 +43,7 @@ def _parse_leaderboard_entry(raw: dict, rank: int) -> LeaderboardEntry:
     )
 
 
-def _parse_trade(raw: dict, wallet: str) -> Optional[Trade]:
+def _parse_trade(raw: dict[str, Any], wallet: str) -> Optional[Trade]:
     """Convert a raw API trade dict into a Trade model. Returns None if unparseable."""
     trade_id = str(raw.get("id") or raw.get("trade_id") or raw.get("tradeId") or "")
     market_id = str(
@@ -76,7 +76,7 @@ def _parse_trade(raw: dict, wallet: str) -> Optional[Trade]:
     )
 
 
-def _parse_position(raw: dict, wallet: str) -> Optional[Position]:
+def _parse_position(raw: dict[str, Any], wallet: str) -> Optional[Position]:
     market_id = str(
         raw.get("market") or raw.get("marketId") or raw.get("conditionId") or ""
     )
@@ -133,7 +133,7 @@ def _compute_stats_from_trades(wallet: str, trades: list[Trade]) -> WalletStats:
     return stats
 
 
-def _enrich_stats_from_closed_positions(stats: WalletStats, positions: list[dict]) -> WalletStats:
+def _enrich_stats_from_closed_positions(stats: WalletStats, positions: list[dict[str, Any]]) -> WalletStats:
     """
     Use the richer closed-positions endpoint (which already contains realised P&L)
     when available, to fill in WalletStats more accurately.

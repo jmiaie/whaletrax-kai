@@ -436,6 +436,7 @@ def make_trade_alert_card(
     direction = 'UP' if side.upper() == 'BUY' else 'DOWN'
     is_profit = trader_pnl >= 0
     profit_abs = abs(trader_pnl)
+    streak = streak if streak is not None else 0
 
     # Map recent_roi (30d ROI) to roi param (signed)
     roi_pct = recent_roi if trader_pnl >= 0 else -abs(recent_roi)

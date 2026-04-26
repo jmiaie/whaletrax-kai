@@ -41,9 +41,9 @@ NUM_GROWTH_PERIODS = 10
 
 
 def _bucket_snapshots(
-    snapshots: list,
+    snapshots: list[BalanceSnapshot],
     n_buckets: int,
-) -> list[list]:
+) -> list[list[BalanceSnapshot]]:
     """Split snapshots into *n_buckets* roughly equal groups by index."""
     if not snapshots or n_buckets <= 0:
         return []

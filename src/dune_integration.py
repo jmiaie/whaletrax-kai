@@ -25,6 +25,7 @@ from typing import Optional
 from dune_client.client import DuneClient
 from dune_client.query import QueryBase
 from dune_client.types import QueryParameter
+from dune_client.models import ResultsResponse
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,9 @@ DUNE_KEY_PATH = "/home/ubuntu/.openclaw/workspace/credentials/skey-dune-jefe"
 
 
 def _load_dune_key() -> str:
-    if os.getenv("DUNE_API_KEY"):
-        return os.getenv("DUNE_API_KEY")
+    env_key = os.getenv("DUNE_API_KEY")
+    if env_key:
+        return env_key
     with open(DUNE_KEY_PATH) as f:
         return f.read().strip()
 
@@ -70,7 +72,7 @@ def list_polymarket_queries() -> list[tuple[int, str, str]]:
     return PUBLIC_QUERIES
 
 
-def run_query(query_id: int, max_age_hours: int = 24):
+def run_query(query_id: int, max_age_hours: int = 24) -> ResultsResponse:
     """
     Run a Dune query and return results (without using execution credits).
 

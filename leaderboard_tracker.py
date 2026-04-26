@@ -55,7 +55,7 @@ def detect_changes(top_n=20):
 
 if __name__ == '__main__':
     import sys
-    token = '8741871021:AAF_OJ0rkE5T_bq4YXT_RPUwWG07bYs8I3g'
+    token = '8741871021:AAGtWosFayhX82ls7W3ZNcNh5cIQcEbAEpM'
     CHAT = -1003786930778
 
     import requests

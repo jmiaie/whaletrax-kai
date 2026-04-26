@@ -22,9 +22,9 @@ except ImportError:
     import requests
 
 # Bot token for @jefe_swarm2bot (WhaleTrax broadcast bot)
-BOT_TOKEN = "8741871021:AAF_OJ0rkE5T_bq4YXT_RPUwWG07bYs8I3g"
+BOT_TOKEN = "8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg"
 # Channel ID for Polyshark broadcasts
-CHANNEL_ID = "-1003999194095"
+CHANNEL_ID = "-1003786930778"
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
@@ -45,11 +45,9 @@ def send_text(message: str, parse_mode: str = "Markdown") -> dict:
 def send_photo(photo_path: str, caption: str = None, parse_mode: str = "Markdown") -> dict:
     """Send a photo (alert card image) to the Polyshark channel."""
     url = f"{BASE_URL}/sendPhoto"
-    payload = {
-        "chat_id": CHANNEL_ID,
-        "parse_mode": parse_mode
-    }
-    data = {"caption": caption} if caption else {}
+    data = {"chat_id": CHANNEL_ID, "parse_mode": parse_mode}
+    if caption:
+        data["caption"] = caption
     with open(photo_path, "rb") as f:
         files = {"photo": f}
         response = requests.post(url, data=data, files=files, timeout=30)

@@ -19,7 +19,7 @@ from datetime import datetime
 SESSION = requests.Session()
 SESSION.headers.update({'User-Agent': 'Mozilla/5.0 (compatible; PolysharkBot/1.0)'})
 
-def kucoin_ticker(pair='BTC-USDT') -> dict:
+def kucoin_ticker(pair='BTC-USDT') -> dict[str, object]:
     """KuCoin public ticker — works from US."""
     try:
         url = f'https://api.kucoin.com/api/v1/market/orderbook/level1'
@@ -41,7 +41,7 @@ def kucoin_ticker(pair='BTC-USDT') -> dict:
         print(f"KuCoin error: {e}")
     return {}
 
-def okx_ticker(instId='BTC-USDT') -> dict:
+def okx_ticker(instId='BTC-USDT') -> dict[str, object]:
     """OKX public ticker — works from US."""
     try:
         url = 'https://www.okx.com/api/v5/market/ticker'
@@ -63,7 +63,7 @@ def okx_ticker(instId='BTC-USDT') -> dict:
         print(f"OKX error: {e}")
     return {}
 
-def coingecko_price(coin='bitcoin', vs='usd') -> dict:
+def coingecko_price(coin='bitcoin', vs='usd') -> dict[str, object]:
     """CoinGecko free tier — works from US."""
     try:
         url = f'https://api.coingecko.com/api/v3/simple/price'
@@ -83,7 +83,7 @@ def coingecko_price(coin='bitcoin', vs='usd') -> dict:
         print(f"CoinGecko error: {e}")
     return {}
 
-def coingecko_ohlc(coin='bitcoin', days=7) -> list:
+def coingecko_ohlc(coin='bitcoin', days=7) -> list[list[float]]:
     """CoinGecko OHLC — 7 day chart for Kronos."""
     try:
         url = f'https://api.coingecko.com/api/v3/coins/{coin}/ohlc'
@@ -109,7 +109,7 @@ def coinbase_spot(quote_currency='BTC', base='USD') -> float:
 
 # ── Consensus BTC Price ────────────────────────────────────────────────────────
 
-def get_btc_price() -> dict:
+def get_btc_price() -> dict[str, object]:
     """Get BTC/USD from multiple sources. Returns consensus."""
     result = {}
     
@@ -144,7 +144,7 @@ def get_btc_price() -> dict:
 
 # ── Kronos OHLCV Adapter ──────────────────────────────────────────────────────
 
-def get_kronos_ohlcv(coin='bitcoin', days=7) -> list[list]:
+def get_kronos_ohlcv(coin='bitcoin', days=7) -> list[list[float]]:
     """
     Get OHLCV data in Kronos format [timestamp, O, H, L, C, V].
     Uses CoinGecko (no auth required, works from US VPS).

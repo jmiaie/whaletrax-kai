@@ -42,7 +42,7 @@ from src.polymarket_client import get_user_positions
 from src.wallet_scanner import _safe_float
 from alerts.polyshark_alert import make_trade_alert_card
 
-BOT_TOKEN      = '8741871021:AAF_OJ0rkE5T_bq4YXT_RPUwWG07bYs8I3g'
+BOT_TOKEN      = '8741871021:AAGtWosFayhX82ls7W3ZNcNh5cIQcEbAEpM'
 ALERT_GROUP_ID = '-1003786930778'
 DB_PATH        = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
 MIN_HOURS      = 48

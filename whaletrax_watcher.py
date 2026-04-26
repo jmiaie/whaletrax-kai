@@ -38,10 +38,10 @@ def _load_token():
                 k, v = line.split('=', 1)
                 if k in ('TOKEN', 'BOT_TOKEN', 'WHALETRAX_BOT_TOKEN'):
                     return v.strip()
-    return os.getenv('WHALETRAX_BOT_TOKEN', '8741871021:AAF_OJ0rkE5T_bq4YXT_RPUwWG07bYs8I3g')
+    return os.getenv('WHALETRAX_BOT_TOKEN', '8741871021:AAGtWosFayhX82ls7W3ZNcNh5cIQcEbAEpM')
 
-TOKEN   = _load_token()
-CHAT_ID = '-1003999194095'
+TOKEN   = _load_token() or '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'
+CHAT_ID = '-1003786930778'
 
 # ── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(

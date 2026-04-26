@@ -38,7 +38,7 @@ MIN_SIZE     = 100
 _cycle_sends = 0
 _cycle_rl_errors = 0
 
-TOKEN = '8741871021:AAH_ZeMzvMhQxPnx-Z2R_S5asnLCwlHsxa0'
+TOKEN = '8741871021:AAGtWosFayhX82ls7W3ZNcNh5cIQcEbAEpM'
 
 CHANNELS = {
     'hub':      -1003786930778,  # Alert Hub (Kai receives first)
