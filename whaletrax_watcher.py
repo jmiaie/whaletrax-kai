@@ -28,7 +28,7 @@ import requests
 from src import config, big_win_detector as bwd
 from polyshark_sender import test_connection
 
-JARV_EMOJI = '\U000026A1'  # ⚡
+JARV_EMOJI = '\U0001F916'  # 🤖
 
 # Config
 STATE_FILE     = Path('/tmp/whaletrax_alert_state.json')
