@@ -28,6 +28,8 @@ import requests
 from src import config, big_win_detector as bwd
 from polyshark_sender import test_connection
 
+JARV_EMOJI = '\U000026A1'  # ⚡
+
 # Config
 STATE_FILE     = Path('/tmp/whaletrax_alert_state.json')
 PAUSE_FILE     = Path('/tmp/whaletrax_paused.flag')
@@ -71,14 +73,14 @@ def pause():
         'paused_at': datetime.now().isoformat(),
         'paused_by': 'manual',
     }))
-    log.info('Scanner PAUSED')
+    log.info(f'{JARV_EMOJI} Scanner PAUSED')
 
 def resume():
     if PAUSE_FILE.exists():
         PAUSE_FILE.unlink()
-        log.info('Scanner RESUMED')
+        log.info(f'{JARV_EMOJI} Scanner RESUMED')
     else:
-        log.info('Scanner was not paused')
+        log.info(f'{JARV_EMOJI} Scanner was not paused')
 
 def stop():
     state = load_state()
@@ -87,7 +89,7 @@ def stop():
     STATE_FILE.write_text(json.dumps({'seen_keys': [], 'last_run': None, 'total_sent': 0}))
     if PAUSE_FILE.exists():
         PAUSE_FILE.unlink()
-    log.info(f'Scanner STOPPED - cleared {seen_count} seen_keys, total_sent was {total}')
+    log.info(f'{JARV_EMOJI} Scanner STOPPED - cleared {seen_count} seen_keys, total_sent was {total}')
 
 def status():
     state = load_state()
@@ -95,7 +97,7 @@ def status():
     total = state.get('total_sent', 0)
     seen = len(state.get('seen_keys', []))
     last = state.get('last_run', 'never')
-    print(f'WhaleTrax Watcher - [{p}]')
+    print(f'{JARV_EMOJI} WhaleTrax Watcher - [{p}]')
     print(f'  Total alerts ever sent: {total}')
     print(f'  Seen keys in memory:    {seen}')
     print(f'  Last run:              {last}')
@@ -125,7 +127,7 @@ def send_telegram(text: str) -> bool:
         )
         ok = r.json().get('ok', False)
         if ok:
-            log.info('Alert sent')
+            log.info(f'{JARV_EMOJI} Alert sent')
         else:
             log.error(f'Telegram error: {r.json()}')
         return ok
@@ -135,9 +137,8 @@ def send_telegram(text: str) -> bool:
 
 # Build alert text
 def format_big_win_alert(bw) -> str:
-    emoji = 'GREEN'
     question = bw.market_question or 'Unknown Market'
-    return f"""{emoji} *WHALE WIN DETECTED*
+    return f"""{JARV_EMOJI} *WHALE WIN DETECTED*
 ━━━━━━━━━━━━━━━━━━
 📊 *{question[:80]}*
 ━━━━━━━━━━━━━━━━━━
@@ -162,19 +163,19 @@ def inject_fake_alert():
     text = format_big_win_alert(FakeBW())
     ok = send_telegram(text)
     result = 'OK' if ok else 'FAIL'
-    print(f'Inject test: {result}')
+    print(f'{JARV_EMOJI} Inject test: {result}')
     return ok
 
 # Main watcher
 def run():
     if is_paused():
-        log.info('Scanner is PAUSED - exiting (use --resume to re-enable)')
-        print('Scanner is paused. Run with --resume to re-enable.')
+        log.info(f'{JARV_EMOJI} Scanner is PAUSED - exiting (use --resume to re-enable)')
+        print(f'{JARV_EMOJI} Scanner is paused. Run with --resume to re-enable.')
         sys.exit(0)
 
     state    = load_state()
     seen     = set(state.get('seen_keys', []))
-    log.info('=== WhaleTrax Watcher Run ===')
+    log.info(f'{JARV_EMOJI} === WhaleTrax Watcher Run ===')
 
     config.BIG_WIN_MIN_PROFIT_USDC     = MIN_PROFIT
     config.BIG_WIN_MIN_ROI_PCT         = MIN_ROI
@@ -182,7 +183,7 @@ def run():
 
     try:
         big_wins = bwd.scan_big_wins_from_leaderboard(top_n=POLL_TOP_N)
-        log.info(f'Polled {len(big_wins)} total big wins from top-{POLL_TOP_N} wallets')
+        log.info(f'{JARV_EMOJI} Polled {len(big_wins)} total big wins from top-{POLL_TOP_N} wallets')
     except Exception as e:
         log.error(f'Polling error: {e}')
         return
@@ -192,7 +193,7 @@ def run():
     new_wins.sort(key=lambda bw: bw.profit_usdc, reverse=True)
     new_wins = new_wins[:MAX_ALERTS_RUN]
 
-    log.info(f'New wins this run: {len(new_wins)}')
+    log.info(f'{JARV_EMOJI} New wins this run: {len(new_wins)}')
 
     sent = 0
     for bw in new_wins:
@@ -207,7 +208,7 @@ def run():
     state['last_run']  = datetime.now().isoformat()
     save_state(state)
 
-    log.info(f'Done. Sent {sent} new alerts. Total ever sent: {state["total_sent"]}')
+    log.info(f'{JARV_EMOJI} Done. Sent {sent} new alerts. Total ever sent: {state["total_sent"]}')
     return sent
 
 # Entry point
@@ -223,7 +224,7 @@ if __name__ == '__main__':
     elif '--inject' in sys.argv:
         inject_fake_alert()
     elif '--test' in sys.argv:
-        log.info('Testing connection...')
+        log.info(f'{JARV_EMOJI} Testing connection...')
         ok = test_connection()
         sys.exit(0 if ok else 1)
     else:
