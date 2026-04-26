@@ -1,0 +1,446 @@
+{
+  "version": "1.0-enriched",
+  "generated_utc": "2026-04-23T02:50:00Z",
+  "source": "Polymarket holders API (top 30 markets) + profile page /__NEXT_DATA__ enrichment",
+  "total_wallets_identified": 605,
+  "top_n": 50,
+  "tiers": {
+    "TREASURY": "Polymarket treasury/vault \u2014 not a trader",
+    "MM": "Market maker \u2014 arbitrageur, not directional bettor",
+    "WHALE": "Active Polymarket trader \u2014 primary watchlist target"
+  },
+  "caveats": [
+    "Rank #1 ($111M) is Polymarket treasury \u2014 not a trader",
+    "Ranks #2-3 are known market makers",
+    "P&L from Polymarket profiles (on-chain realized + unrealized)",
+    "Holdings are current positions at scan time \u2014 not cumulative P&L"
+  ],
+  "wallets": [
+    {
+      "rank": 1,
+      "address": "0xa5ef39c3d3e10d0b270233af41cac69796b12966",
+      "name": null,
+      "usdc_held": 111930129.49,
+      "markets": 28,
+      "tier": "TREASURY",
+      "all_time_pnl": null,
+      "total_trades": null
+    },
+    {
+      "rank": 2,
+      "address": "0xbddf61af533ff524d27154e589d2d7a81510c684",
+      "name": "Countryside",
+      "usdc_held": 6794620.24,
+      "markets": 17,
+      "tier": "MM",
+      "all_time_pnl": null,
+      "total_trades": null
+    },
+    {
+      "rank": 3,
+      "address": "0xdb27bf2ac5d428a9c63dbc914611036855a6c56e",
+      "name": "DrPufferfish",
+      "usdc_held": 6535003.51,
+      "markets": 13,
+      "tier": "MM",
+      "all_time_pnl": null,
+      "total_trades": null
+    },
+    {
+      "rank": 4,
+      "address": "0x51fd8f0358cc9e8a1ee5f87a0c7e3b07ed634272",
+      "name": "TimeTraveler",
+      "usdc_held": 3946751.16,
+      "markets": 16,
+      "tier": "WHALE",
+      "all_time_pnl": 109070.43,
+      "total_trades": null
+    },
+    {
+      "rank": 5,
+      "address": "0x5d189e816b4149be00977c1a3c8840374aec4972",
+      "name": "gloriafoster",
+      "usdc_held": 2002112.14,
+      "markets": 2,
+      "tier": "WHALE",
+      "all_time_pnl": 7946.86,
+      "total_trades": null
+    },
+    {
+      "rank": 6,
+      "address": "0xf49ce459b52f60b70ce0fe9aa6203e6bf90f9786",
+      "name": "TradingWave",
+      "usdc_held": 1895971.69,
+      "markets": 12,
+      "tier": "WHALE",
+      "all_time_pnl": 64288.34,
+      "total_trades": null
+    },
+    {
+      "rank": 7,
+      "address": "0xead152b855effa6b5b5837f53b24c0756830c76a",
+      "name": "elkmonkey",
+      "usdc_held": 1822157.62,
+      "markets": 10,
+      "tier": "WHALE",
+      "all_time_pnl": 509975.98,
+      "total_trades": null
+    },
+    {
+      "rank": 8,
+      "address": "0x5357cf7202881f02ac8dcd9e19dc27456e8f3a0d",
+      "name": "roushie",
+      "usdc_held": 1771667.04,
+      "markets": 8,
+      "tier": "WHALE",
+      "all_time_pnl": 4886.22,
+      "total_trades": null
+    },
+    {
+      "rank": 9,
+      "address": "0xe40ea00e74059c76c0035c919ef6b99c3e25a94d",
+      "name": "restart77",
+      "usdc_held": 1462664.54,
+      "markets": 8,
+      "tier": "WHALE",
+      "all_time_pnl": 408164.33,
+      "total_trades": null
+    },
+    {
+      "rank": 10,
+      "address": "0x777d9f00c2b4f7b829c9de0049ca3e707db05143",
+      "name": "CarlosMC",
+      "usdc_held": 1406505.76,
+      "markets": 5,
+      "tier": "WHALE",
+      "all_time_pnl": 795358.14,
+      "total_trades": null
+    },
+    {
+      "rank": 11,
+      "address": "0xeb22f4735df6bd5d14e1b5fd10faefa7757d808a",
+      "name": "BigRabbit",
+      "usdc_held": 1348686.21,
+      "markets": 6,
+      "tier": "WHALE",
+      "all_time_pnl": 13628.63,
+      "total_trades": null
+    },
+    {
+      "rank": 12,
+      "address": "0x52c2143f69dd3dcd249f688623c64ab5f7900556",
+      "name": "0xcdlambjrrt0lk1en0js1mps0nipda1lyjfk",
+      "usdc_held": 1192993.13,
+      "markets": 1,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 13,
+      "address": "0xef9fb7322631ecb96f40c7210006ccb4066d8924",
+      "name": "QuorvexBlint",
+      "usdc_held": 1184357.01,
+      "markets": 3,
+      "tier": "WHALE",
+      "all_time_pnl": -20252.84,
+      "total_trades": null
+    },
+    {
+      "rank": 14,
+      "address": "0xacb206b460a17382a734de8d931cc176307eb989",
+      "name": "AppleTime67",
+      "usdc_held": 1010564.83,
+      "markets": 5,
+      "tier": "WHALE",
+      "all_time_pnl": 7454.68,
+      "total_trades": null
+    },
+    {
+      "rank": 15,
+      "address": "0x1a162eb4dfb533d503dcc0fa09776f6e1b204335",
+      "name": "freemuney",
+      "usdc_held": 966335.82,
+      "markets": 6,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 16,
+      "address": "0x43d4482a0a69d9bcfea8ce6432629b26c19a13a2",
+      "name": "wooter",
+      "usdc_held": 886061.02,
+      "markets": 5,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 17,
+      "address": "0xe542afd3881c4c330ba0ebbb603bb470b2ba0a37",
+      "name": "leegunner",
+      "usdc_held": 882710.34,
+      "markets": 4,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 18,
+      "address": "0x067f7f6e3d5363f1cf962499d1be2ca6de8be041",
+      "name": "SappySeal67",
+      "usdc_held": 749997.47,
+      "markets": 3,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 19,
+      "address": "0x54a598106e0467dacc1a4ced3909582f72aaee3d",
+      "name": "anon-1723093936269",
+      "usdc_held": 707576.66,
+      "markets": 4,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 20,
+      "address": "0xa2b5bafa01d0f81926a2a88e5628a95b59fc4582",
+      "name": "BruceWayne77",
+      "usdc_held": 702974.79,
+      "markets": 4,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 21,
+      "address": "0x362ea6c4dbafffe5df6a3cc6f8f4029547238983",
+      "name": "KamAlla",
+      "usdc_held": 687838.53,
+      "markets": 8,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 22,
+      "address": "0x2ccc6ebc5e41d41a3f2a3662c5d4f6547e075a0f",
+      "name": "Quants2",
+      "usdc_held": 657034.99,
+      "markets": 5,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 23,
+      "address": "0x2e3ea056400d81c42e2ce26ef25fda4ec5caabea",
+      "name": "HDGB",
+      "usdc_held": 654260.68,
+      "markets": 16,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 24,
+      "address": "0x91fd9fb66b4f61d7de7e0d826221c4a0f8e01cde",
+      "name": "Apple-Time",
+      "usdc_held": 649997.52,
+      "markets": 3,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 25,
+      "address": "0xa38a455bbdd4b68486548b7e19da99903f4f821d",
+      "name": "takeormake",
+      "usdc_held": 559267.46,
+      "markets": 4,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 26,
+      "address": "0xf5198df69e13937a40d1c76d6f72d9aa067d906b",
+      "name": "sbimbg",
+      "usdc_held": 553696.34,
+      "markets": 5,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 27,
+      "address": "0x9703676286b93c2eca71ca96e8757104519a69c2",
+      "name": "TheMangler",
+      "usdc_held": 538300.83,
+      "markets": 12,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 28,
+      "address": "0x4cb5ec560735efca23f76f2dd152b74bc6a9b536",
+      "name": "TheEmprah",
+      "usdc_held": 527424.13,
+      "markets": 3,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 29,
+      "address": "0x82ff82838d26347b7188c8e3ddc9fb6f8306f0c4",
+      "name": "lucio12z16",
+      "usdc_held": 474744.12,
+      "markets": 2,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 30,
+      "address": "0x5db55991a1b7a921c39aa5d823bfd15397b81a50",
+      "name": "Dragonite35",
+      "usdc_held": 450044.49,
+      "markets": 1,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 31,
+      "address": "0xd399ba186f89721f79e0a72bfa6c9babd2e13f46",
+      "name": "Etanol",
+      "usdc_held": 449271.14,
+      "markets": 1,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 32,
+      "address": "0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee",
+      "name": "kch123",
+      "usdc_held": 446644.22,
+      "markets": 3,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 33,
+      "address": "0xe574b4bf69386301fa2759bc4c39c0fc6f83832a",
+      "name": "Turtle892",
+      "usdc_held": 439027.73,
+      "markets": 7,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 34,
+      "address": "0x608b16197375d35db426375ccc2704dc6203fbd6",
+      "name": "alwayslate133113",
+      "usdc_held": 428636.77,
+      "markets": 2,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 35,
+      "address": "0x866465ff16468c0a0bea259b75cfc575700edd88",
+      "name": "Count.Gusto",
+      "usdc_held": 421835.12,
+      "markets": 6,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 36,
+      "address": "0x160db9bb5bf012f21251a74737093bcdc36f5295",
+      "name": "JESUSCHRISTISGOD",
+      "usdc_held": 418577.22,
+      "markets": 4,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 37,
+      "address": "0xab26196d2d804e98752bdd56f34d24e473400c0c",
+      "name": "bayharborbutcher",
+      "usdc_held": 414922.55,
+      "markets": 2,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 38,
+      "address": "0x1223987eb4bf8564a932f43e3cec9f28b5ced424",
+      "name": "rivermarkets",
+      "usdc_held": 410825.89,
+      "markets": 7,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 39,
+      "address": "0x21378fd64736103b01685aee2b1e5acfdc4f0677",
+      "name": "AiBets",
+      "usdc_held": 390603.76,
+      "markets": 8,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 40,
+      "address": "0x15c81b35df1404e5f4bacd63dcfa944b70fdd2d0",
+      "name": "rocroi",
+      "usdc_held": 368492.65,
+      "markets": 4,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 41,
+      "address": "0x519794a3d72e8f18790b3089ac1e75cd74a40ce6",
+      "name": "staticllama",
+      "usdc_held": 353966.36,
+      "markets": 4,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 42,
+      "address": "0xc5fa48b547b2fccc480e8699fc2b160d0cac5b59",
+      "name": "pfing",
+      "usdc_held": 349999.35,
+      "markets": 2,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 43,
+      "address": "0xed2b092ba85a2f182584348932c53b33e9a22bb9",
+      "name": "stormwww",
+      "usdc_held": 333300.0,
+      "markets": 1,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 44,
+      "address": "0xd8474df65bfc771faa0459ce6e32b83b5b0dae3a",
+      "name": "Ronaldo2win",
+      "usdc_held": 328594.87,
+      "markets": 2,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 45,
+      "address": "0xe3ff02e324912152479b1a63bf903ddad290805c",
+      "name": "anon-1720947586435",
+      "usdc_held": 311836.62,
+      "markets": 5,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 46,
+      "address": "0x81ef8cb9f75921beda5a0a6cd3c5c508ac6347f7",
+      "name": "Rrrrffff",
+      "usdc_held": 306536.22,
+      "markets": 1,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 47,
+      "address": "0x59c7fd3c203ee9c6d5ee9a05863e80c2598f4ccc",
+      "name": "zarboxyl",
+      "usdc_held": 305501.51,
+      "markets": 2,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 48,
+      "address": "0xb6bed94e75c333dae24eb9c80b3fef47ef3cfcfe",
+      "name": "DickTurbin",
+      "usdc_held": 292200.85,
+      "markets": 4,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 49,
+      "address": "0x03431e72f2c3de8a1fb35eeb4c82624e08e1f2dc",
+      "name": "DeFiMonky",
+      "usdc_held": 290018.18,
+      "markets": 1,
+      "tier": "WHALE"
+    },
+    {
+      "rank": 50,
+      "address": "0xce845c6892bcc6d256ab419e7803e5ff2e969e2b",
+      "name": "juanporco",
+      "usdc_held": 289964.79,
+      "markets": 3,
+      "tier": "WHALE"
+    }
+  ]
+}

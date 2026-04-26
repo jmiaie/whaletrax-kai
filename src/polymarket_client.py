@@ -102,7 +102,7 @@ def get_market(market_id: str) -> Optional[dict[str, Any]]:
 
 def get_leaderboard(limit: int = config.LEADERBOARD_TOP_N) -> list[dict[str, Any]]:
     """Return the Polymarket profit leaderboard."""
-    url = f"{config.DATA_API_BASE}/leaderboard"
+    url = f"{config.DATA_API_BASE}/v1/leaderboard"
     data = _get(url, {"limit": limit})
     if isinstance(data, list):
         return data

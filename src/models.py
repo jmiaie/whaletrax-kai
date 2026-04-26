@@ -92,6 +92,11 @@ class BigWin:
     timestamp: int
     market_id: str = ""
     trade_id: str = ""
+    end_date: str = ""
+    avg_price: float = 0.0
+    win_rate_30d: float = 0.0   # 30-day win rate
+    win_rate: float = 0.0    # lifetime win rate
+    win_streak: int = 0      # consecutive wins (most recent first)
 
 
 @dataclass

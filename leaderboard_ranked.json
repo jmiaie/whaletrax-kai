@@ -1,0 +1,308 @@
+{
+  "generated_utc": "2026-04-23T04:01:00Z",
+  "source": "polymarket.com/leaderboard __NEXT_DATA__",
+  "method": "Composite score = log10(volume+1) x sign(pnl) \u2014 freq from volume proxy",
+  "note": "Win rate not available via public API \u2014 requires Dune Pro or Nansen",
+  "wallets": [
+    {
+      "lb_rank": 4,
+      "name": "0x2a2C53bD...(high vol)",
+      "address": "0x2a2c53bd278c04da9962fcf96490e17f3dfb9bc1",
+      "pnl": 3070747.0,
+      "volume": 132506421.0,
+      "roi": 2.32,
+      "freq_score": 8.12,
+      "composite": 8.12
+    },
+    {
+      "lb_rank": 7,
+      "name": "RN1",
+      "address": "0x2005d16a84ceefa912d4e380cd32e7ff827875ea",
+      "pnl": 2160316.0,
+      "volume": 110840876.0,
+      "roi": 1.95,
+      "freq_score": 8.04,
+      "composite": 8.04
+    },
+    {
+      "lb_rank": 30,
+      "name": "tripping",
+      "address": "0x6480542954b70a674a74bd1a6015dec362dc8dc5",
+      "pnl": 30382.0,
+      "volume": 90874390.0,
+      "roi": 0.03,
+      "freq_score": 7.96,
+      "composite": 7.96
+    },
+    {
+      "lb_rank": 25,
+      "name": "ferrariChampions2026",
+      "address": "0xfe787d2da716d60e8acff57fb87eb13cd4d10319",
+      "pnl": 112622.0,
+      "volume": 74052406.0,
+      "roi": 0.15,
+      "freq_score": 7.87,
+      "composite": 7.87
+    },
+    {
+      "lb_rank": 29,
+      "name": "ashash111",
+      "address": "0x43e98f912cd6ddadaad88d3297e78c0648e688e5",
+      "pnl": 35724.0,
+      "volume": 74366520.0,
+      "roi": 0.05,
+      "freq_score": 7.87,
+      "composite": 7.87
+    },
+    {
+      "lb_rank": 11,
+      "name": "swisstony",
+      "address": "0x204f72f35326db932158cba6adff0b9a1da95e14",
+      "pnl": 1729021.0,
+      "volume": 72121709.0,
+      "roi": 2.4,
+      "freq_score": 7.86,
+      "composite": 7.86
+    },
+    {
+      "lb_rank": 21,
+      "name": "GamblingIsAllYouNeed",
+      "address": "0x507e52ef684ca2dd91f90a9d26d149dd3288beae",
+      "pnl": 912475.0,
+      "volume": 73043804.0,
+      "roi": 1.25,
+      "freq_score": 7.86,
+      "composite": 7.86
+    },
+    {
+      "lb_rank": 31,
+      "name": "meetgoodlife",
+      "address": "0x9e9c8b080659b08c3474ea761790a20982e26421",
+      "pnl": 7674.0,
+      "volume": 68085482.0,
+      "roi": 0.01,
+      "freq_score": 7.83,
+      "composite": 7.83
+    },
+    {
+      "lb_rank": 10,
+      "name": "CemeterySun",
+      "address": "0x37c1874a60d348903594a96703e0507c518fc53a",
+      "pnl": 1918871.0,
+      "volume": 61537554.0,
+      "roi": 3.12,
+      "freq_score": 7.79,
+      "composite": 7.79
+    },
+    {
+      "lb_rank": 27,
+      "name": "Q96s3kwozynxpau",
+      "address": "0x2663daca3cecf3767ca1c3b126002a8578a8ed1f",
+      "pnl": 91522.0,
+      "volume": 61874764.0,
+      "roi": 0.15,
+      "freq_score": 7.79,
+      "composite": 7.79
+    },
+    {
+      "lb_rank": 28,
+      "name": "Just2SeeULaugh",
+      "address": "0xc21ea96be762bb55041529af6e386e7c53b80215",
+      "pnl": 76006.0,
+      "volume": 54552076.0,
+      "roi": 0.14,
+      "freq_score": 7.74,
+      "composite": 7.74
+    },
+    {
+      "lb_rank": 26,
+      "name": "BakerMcKenzie",
+      "address": "0xd99f3bec8e060ada0aef0c4057695dd5bc22fcdc",
+      "pnl": 92154.0,
+      "volume": 53374587.0,
+      "roi": 0.17,
+      "freq_score": 7.73,
+      "composite": 7.73
+    },
+    {
+      "lb_rank": 9,
+      "name": "sovereign2013",
+      "address": "0xee613b3fc183ee44f9da9c05f53e2da107e3debf",
+      "pnl": 1976493.0,
+      "volume": 49733468.0,
+      "roi": 3.97,
+      "freq_score": 7.7,
+      "composite": 7.7
+    },
+    {
+      "lb_rank": 8,
+      "name": "elkmonkey",
+      "address": "0xead152b855effa6b5b5837f53b24c0756830c76a",
+      "pnl": 2021026.0,
+      "volume": 48263040.0,
+      "roi": 4.19,
+      "freq_score": 7.68,
+      "composite": 7.68
+    },
+    {
+      "lb_rank": 22,
+      "name": "Bonereaper",
+      "address": "0xeebde7a0e019a63e6b476eb425505b7b3e6eba30",
+      "pnl": 513587.0,
+      "volume": 45298187.0,
+      "roi": 1.13,
+      "freq_score": 7.66,
+      "composite": 7.66
+    },
+    {
+      "lb_rank": 24,
+      "name": "poorsob",
+      "address": "0x2785e7022dc20757108204b13c08cea8613b70ae",
+      "pnl": 127995.0,
+      "volume": 43425100.0,
+      "roi": 0.29,
+      "freq_score": 7.64,
+      "composite": 7.64
+    },
+    {
+      "lb_rank": 23,
+      "name": "anon-1772479215461",
+      "address": "0xb27bc932bf8110d8f78e55da7d5f0497a18b5b82",
+      "pnl": 507933.0,
+      "volume": 43127863.0,
+      "roi": 1.18,
+      "freq_score": 7.63,
+      "composite": 7.63
+    },
+    {
+      "lb_rank": 1,
+      "name": "0x492442...(top holder)",
+      "address": "0x492442eab586f242b53bda933fd5de859c8a3782",
+      "pnl": 6864456.0,
+      "volume": 30376203.0,
+      "roi": 22.6,
+      "freq_score": 7.48,
+      "composite": 7.48
+    },
+    {
+      "lb_rank": 18,
+      "name": "surfandturf",
+      "address": "0x9f2fe025f84839ca81dd8e0338892605702d2ca8",
+      "pnl": 1292740.0,
+      "volume": 22871931.0,
+      "roi": 5.65,
+      "freq_score": 7.36,
+      "composite": 7.36
+    },
+    {
+      "lb_rank": 12,
+      "name": "gfjoigfsjoigsjoi",
+      "address": "0x36a3f17401e395ef4cb1b7f42bcdb8ab8e15fafb",
+      "pnl": 1598556.0,
+      "volume": 18577929.0,
+      "roi": 8.6,
+      "freq_score": 7.27,
+      "composite": 7.27
+    },
+    {
+      "lb_rank": 17,
+      "name": "texaskid",
+      "address": "0xc8075693f48668a264b9fa313b47f52712fcc12b",
+      "pnl": 1326760.0,
+      "volume": 16282325.0,
+      "roi": 8.15,
+      "freq_score": 7.21,
+      "composite": 7.21
+    },
+    {
+      "lb_rank": 5,
+      "name": "beachboy4",
+      "address": "0xc2e7800b5af46e6093872b177b7a5e7f0563be51",
+      "pnl": 2667527.0,
+      "volume": 14455277.0,
+      "roi": 18.45,
+      "freq_score": 7.16,
+      "composite": 7.16
+    },
+    {
+      "lb_rank": 13,
+      "name": "CarlosMC",
+      "address": "0x777d9f00c2b4f7b829c9de0049ca3e707db05143",
+      "pnl": 1592465.0,
+      "volume": 10510683.0,
+      "roi": 15.15,
+      "freq_score": 7.02,
+      "composite": 7.02
+    },
+    {
+      "lb_rank": 16,
+      "name": "gatorr",
+      "address": "0x93abbc022ce98d6f45d4444b594791cc4b7a9723",
+      "pnl": 1334603.0,
+      "volume": 9861882.0,
+      "roi": 13.53,
+      "freq_score": 6.99,
+      "composite": 6.99
+    },
+    {
+      "lb_rank": 20,
+      "name": "Anointed-Connect",
+      "address": "0x8f037a2e4fd49d11267f4ab874ab7ba745ac64d6",
+      "pnl": 1167819.0,
+      "volume": 495236.0,
+      "roi": 235.81,
+      "freq_score": 5.69,
+      "composite": 5.69
+    },
+    {
+      "lb_rank": 15,
+      "name": "lo34567Taipe",
+      "address": "0xf195721ad850377c96cd634457c70cd9e8308057",
+      "pnl": 1456139.0,
+      "volume": 20.0,
+      "roi": 7280695.0,
+      "freq_score": 1.32,
+      "composite": 1.32
+    },
+    {
+      "lb_rank": 2,
+      "name": "HorizonSplendidView",
+      "address": "0x02227b8f5a9636e895607edd3185ed6ee5598ff7",
+      "pnl": 4016108.0,
+      "volume": 0.0,
+      "roi": 0,
+      "freq_score": 0,
+      "composite": 0
+    },
+    {
+      "lb_rank": 3,
+      "name": "reachingsky",
+      "address": "0xefbc5fec8d7b0acdc8911bdd9a98d6964308f9a2",
+      "pnl": 3742635.0,
+      "volume": 0.0,
+      "roi": 0,
+      "freq_score": 0,
+      "composite": 0
+    },
+    {
+      "lb_rank": 6,
+      "name": "majorexploiter",
+      "address": "0x019782cab5d844f02bafb71f512758be78579f3c",
+      "pnl": 2416975.0,
+      "volume": 0.0,
+      "roi": 0,
+      "freq_score": 0,
+      "composite": 0
+    },
+    {
+      "lb_rank": 14,
+      "name": "432614799197",
+      "address": "0xdc876e6873772d38716fda7f2452a78d426d7ab6",
+      "pnl": 1495977.0,
+      "volume": 0.0,
+      "roi": 0,
+      "freq_score": 0,
+      "composite": 0
+    }
+  ]
+}

@@ -10,6 +10,7 @@ A big win is a closed trade where:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from . import config, polymarket_client as pm
@@ -27,8 +28,27 @@ def _closed_position_to_big_win(raw: dict[str, Any], wallet: str, display_name: 
     pnl = _safe_float(
         raw.get("pnl") or raw.get("profit") or raw.get("profitAndLoss") or raw.get("realizedPnl")
     )
+    # cost basis: prefer explicit cost field, else derive from totalBought / avgPrice
     cost = _safe_float(raw.get("cost") or raw.get("invested") or raw.get("costBasis"))
-    outcome = str(raw.get("outcome") or raw.get("outcomeIndex") or "")
+    if not cost:
+        total_bought = _safe_float(raw.get("totalBought") or raw.get("amount") or 0)
+        avg_price = _safe_float(raw.get("avgPrice") or raw.get("price") or 0)
+        if total_bought and avg_price:
+            cost = total_bought * avg_price  # totalBought is absolute token amount, cost = tokens * avg price
+        elif total_bought:
+            cost = total_bought  # fallback: treat totalBought as USDC cost
+    # outcome: try direct outcome, then YES/NO indicator, then outcomeIndex
+    raw_outcome = raw.get("outcome") or ""
+    if raw_outcome in ("", None):
+        # Derive YES/NO from avgPrice: < 0.5 = NO side bought, > 0.5 = YES side bought
+        ap = _safe_float(raw.get("avgPrice") or 0)
+        if ap > 0.55:
+            raw_outcome = "YES"
+        elif ap > 0 and ap < 0.45:
+            raw_outcome = "NO"
+        else:
+            raw_outcome = str(raw.get("outcomeIndex", "N/A"))
+    outcome = str(raw_outcome)
     question = str(raw.get("question") or raw.get("title") or raw.get("marketTitle") or "Unknown")
     market_id = str(raw.get("market") or raw.get("marketId") or raw.get("conditionId") or "")
     trade_id = str(raw.get("id") or raw.get("tradeId") or "")
@@ -41,6 +61,16 @@ def _closed_position_to_big_win(raw: dict[str, Any], wallet: str, display_name: 
         and roi >= config.BIG_WIN_MIN_ROI_PCT
         and cost >= config.BIG_WIN_MIN_TRADE_SIZE_USDC
     ):
+        end_date  = str(raw.get("endDate") or "")
+        # Skip markets resolved before Feb 1, 2025 — stale, no alert value
+        # (still-open long-duration markets from 2025 are fine)
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                if end_dt < datetime(2025, 2, 1, tzinfo=timezone.utc):
+                    return None
+            except: pass
+        avg_price = _safe_float(raw.get("avgPrice") or 0)
         return BigWin(
             wallet=wallet,
             display_name=display_name,
@@ -52,6 +82,8 @@ def _closed_position_to_big_win(raw: dict[str, Any], wallet: str, display_name: 
             timestamp=timestamp,
             market_id=market_id,
             trade_id=trade_id,
+            end_date=end_date,
+            avg_price=avg_price,
         )
     return None
 
@@ -70,7 +102,24 @@ def _leaderboard_wallet_to_big_wins(entry_raw: dict[str, Any], rank: int) -> lis
     for pos in closed:
         bw = _closed_position_to_big_win(pos, entry.proxy_wallet, entry.name)
         if bw:
+            bw.leaderboard_volume = entry.volume_usdc
             big_wins.append(bw)
+
+    # Use OMPA-backed LIFETIME win rate (replaces 30-day window)
+    # The 30-day window gives misleading 100% for whales with few recent trades.
+    # Cumulative stats improve with every scan.
+    from wallet_profiles import get_profile, update_profile
+    profile = get_profile(entry.proxy_wallet)
+    profile.name = entry.name  # keep name fresh
+    # Pass ALL closed positions at once — merge_positions dedupes and recalculates
+    if closed:
+        update_profile(entry.proxy_wallet, entry.name, closed)
+    # Assign lifetime win rate to all big wins from this wallet
+    lifetime_rate = profile.win_rate
+    for bw in big_wins:
+        bw.win_rate = lifetime_rate
+        bw.win_rate_30d = profile.win_rate_30d
+        bw.win_streak = profile.current_streak
 
     return big_wins
 
