@@ -16,16 +16,18 @@ os.chdir('/home/ubuntu/.openclaw/workspace/repos/whaletrax')
 import requests
 from src import config, big_win_detector as bwd, polymarket_client as pm
 from polyshark_memory import ingest_alert, ingest_fault, ingest_whale, ingest_streak, ingest_rank_change, ingest_market
+from src.market_enricher import validate_and_enrich
 
 STATE_FILE  = Path('/tmp/polyshark_router_state.json')
 QUEUE_FILE  = Path('/tmp/polyshark_router_queue.json')
+HEALTH_FILE = Path('/tmp/polyshark_router_health.json')
 LOG_FILE    = Path('/tmp/polyshark_router.log')
 PAUSE_FILE  = Path('/tmp/polyshark_router_paused')  # anti-spam killswitch
-MAX_PER_RUN = 5
+MAX_PER_RUN = 1
 MAX_SENDS_PER_CYCLE = 12   # hard cap on total sends per cycle (PRO + category + free)
 POLL_TOP_N  = 20
 FREE_DELAY   = timedelta(minutes=90)
-CURATED_DELAY = timedelta(minutes=15)
+CURATED_DELAY = timedelta(minutes=5)  # curated forward delay
 MAX_CURATED  = 4
 CAT_DELAY    = timedelta(minutes=10)
 PRO_DELAY    = timedelta(minutes=3)
@@ -39,19 +41,28 @@ _cycle_sends = 0
 _cycle_rl_errors = 0
 
 TOKEN = '8741871021:AAGtWosFayhX82ls7W3ZNcNh5cIQcEbAEpM'
+TOKEN = os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'))
 
 CHANNELS = {
-    'hub':      -1003786930778,  # Alert Hub (Kai receives first)
-    'sports':   -1003948034686,
-    'crypto':   -1003999731708,
-    'weather':  -1003532326443,
-    'world':    -1003927756388,
-    'politics': -1003935178097,
-    'econ':     -1003868008293,
-    'esports':  -1003700788085,  # PolysharkEsports
-    'free':     -1003999194095,
+    'hub':      int(os.environ.get('CHANNEL_POLYSHARK_HUB',      '-1003786930778')),  # Polyshark Alert Group
+    'pro':      int(os.environ.get('CHANNEL_POLYSHARK_PRO',      '-1003739747776')),  # PolysharkPRO
+    'sports':   int(os.environ.get('CHANNEL_POLYSHARK_SPORTS',   '-1003948034686')),
+    'crypto':   int(os.environ.get('CHANNEL_POLYSHARK_CRYPTO',   '-1003999731708')),
+    'weather':  int(os.environ.get('CHANNEL_POLYSHARK_WEATHER',  '-1003532326443')),
+    'world':    int(os.environ.get('CHANNEL_POLYSHARK_WORLD',    '-1003927756388')),
+    'politics': int(os.environ.get('CHANNEL_POLYSHARK_POLITICS', '-1003935178097')),
+    'econ':     int(os.environ.get('CHANNEL_POLYSHARK_ECON',     '-1003868008293')),
+    'esports':  int(os.environ.get('CHANNEL_POLYSHARK_ESPORTS',  '-1003700788085')),
+    'free':     int(os.environ.get('CHANNEL_POLYSHARK_FREE',     '-1003999194095')),  # Polyshark free teaser
+    'free_chat': int(os.environ.get('CHANNEL_POLYSHARK_FREE_CHAT','-1003860830659')),
 }
 CHANNEL_NAMES = {v: k for k, v in CHANNELS.items()}
+
+# US geo-restricted channels — Polymarket URLs won't work for these users
+US_GEO_RESTRICTED = {
+    -1003786930778,  # Alert Hub (Jeff's main)
+    -1003999194095,  # Free
+}
 
 CRYPTO_KW    = ['bitcoin','btc','ethereum','eth','crypto','solana','dogecoin','coin','nft']
 SPORTS_KW    = [
@@ -157,17 +168,46 @@ def save_state(state):
 def load_queue():
     if QUEUE_FILE.exists():
         try:
-            return json.loads(QUEUE_FILE.read_text())
+            q = json.loads(QUEUE_FILE.read_text())
+            seen = set()
+            deduped = []
+            for item in q:
+                key = f"{item.get('market_id','')}_{item.get('wallet','')}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(item)
+            return deduped
         except Exception:
             pass
     return []
 
 def save_queue(q):
-    QUEUE_FILE.write_text(json.dumps(q, indent=2))
+    deduped = []
+    seen = set()
+    for item in q:
+        key = f"{item.get('market_id','')}_{item.get('wallet','')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    QUEUE_FILE.write_text(json.dumps(deduped, indent=2))
+
+
+def set_health(status='ok', detail='', retry_after=0):
+    HEALTH_FILE.write_text(json.dumps({
+        'status': status,
+        'detail': detail,
+        'retry_after': retry_after,
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    }, indent=2))
 
 def send(cid, text, pause=True):
     """Send Telegram message. Killswitch + rate-limit + per-cycle hard cap."""
     global _cycle_sends, _cycle_rl_errors
+    if not text:
+        log.warning(f'Send skipped: empty text for {cid}')
+        return False
     if PAUSE_FILE.exists():
         log.warning('Router PAUSED — killswitch active (touch /tmp/polyshark_router_paused to resume)')
         return False
@@ -176,24 +216,29 @@ def send(cid, text, pause=True):
         return False
     if pause and hasattr(send, '_last_send') and send._last_send:
         elapsed = time.time() - send._last_send
-        if elapsed < 0.035:
-            time.sleep(0.035 - elapsed)
+        if elapsed < 0.05:
+            time.sleep(0.05 - elapsed)
     try:
         r = requests.post(f'https://api.telegram.org/bot{TOKEN}/sendMessage',
             json={'chat_id': cid, 'text': text, 'parse_mode': 'HTML',
-                  'disable_web_page_preview': True}, timeout=15)
+                  'disable_web_page_preview': True}, timeout=20)
         send._last_send = time.time()
-        ok = r.json().get('ok', False)
+        payload = r.json()
+        ok = payload.get('ok', False)
         if not ok:
-            err = r.json().get('description', 'unknown')
+            err = payload.get('description', 'unknown')
             if 'Too Many Requests' in err:
                 _cycle_rl_errors += 1
-                log.warning(f'Rate limit hit (cycle #{_cycle_rl_errors}): {err}')
+                retry_after = int(payload.get('parameters', {}).get('retry_after', 10) or 10)
+                set_health('rate_limited', err, retry_after)
+                log.warning(f'Rate limit hit (cycle #{_cycle_rl_errors}): {err} | sleeping {retry_after + 1}s')
+                time.sleep(retry_after + 1)
             else:
                 log.warning(f'Send failed {cid}: {err}')
                 ingest_fault('send_fail', err, {'chat_id': str(cid)})
         if ok:
             _cycle_sends += 1
+            set_health('ok', 'sent')
         return ok
     except Exception as e:
         log.error(f'Send error {cid}: {e}')
@@ -247,7 +292,7 @@ def detect_categories(q):
     if any(k in q for k in ECON_KW):       cats.append('econ')
     return cats if cats else ['pro']
 
-def format_card(bw, tier='PRO'):
+def format_card(bw, tier='PRO', channel_id=None):
     """
     v1.2 card format — Jeff Milam, Polyshark 2026-04-25
 
@@ -260,12 +305,13 @@ def format_card(bw, tier='PRO'):
       🏆 🟠 = amber badge WR 45-64%
       🏆 🔴 = red badge WR <40%
       n=N = trade count
-      ✅ $X | ✅ +X% ROI = profit + ROI both green
+      ✅ $X | ✅ +X% potential ROI = entry card
+      ✅ $X | ✅ +X% ROI = realized win/close
       💰 $X | 💲 -X% ROI = loss + negative ROI both red
 
     Reject rules:
       Entry price $0.0000 → REJECT (return None)
-      Stock tickers ($AMAZON, $YELLEN, $MSFT etc) → REJECT (return None)
+      Stock tickers (AMAZON, YELLEN, MSFT etc) → REJECT (return None)
       Resolved markets older than 2025 → REJECT (return None)
     """
     import datetime as dt
@@ -285,40 +331,137 @@ def format_card(bw, tier='PRO'):
             log.warning(f"REJECTED: stock ticker in market: {getattr(bw,'market_id','')}")
             return None
 
-    # ── REJECT: pre-2025 resolved markets ──────────────────────────────────
+    # ── REJECT: already-resolved markets ────────────────────────────────
     end_date_str = getattr(bw, 'end_date', '') or ''
-    if len(end_date_str) >= 4:
+    if end_date_str:
         try:
-            year = int(end_date_str[:4])
-            if year < 2025:
-                log.warning(f"REJECTED: pre-2025 resolved market {getattr(bw,'market_id','')} year={year}")
+            from datetime import datetime, timezone
+            end_dt = datetime.fromisoformat(end_date_str.replace('Z', '+00:00')).replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            if end_dt < now:
+                log.warning(f"REJECTED: already-resolved market {getattr(bw,'market_id','')} ended {end_date_str[:10]}")
                 return None
-        except ValueError:
-            pass  # no year readable, allow it
+        except (ValueError, TypeError):
+            pass  # unparseable date, allow it
+
+    # ── REJECT: future opened date (bad data — opened ts is in the future) ─
+    ts_opened = getattr(bw, 'timestamp', None)
+    if ts_opened:
+        try:
+            from datetime import datetime, timezone as tz
+            opened_dt = datetime.fromtimestamp(ts_opened, tz=tz.utc)
+            if opened_dt > datetime.now(tz.utc):
+                log.warning(f"REJECTED: future opened date {getattr(bw,'market_id','')} ts={ts_opened} ({opened_dt.date()})")
+                return None
+        except (ValueError, TypeError, OSError):
+            pass
 
     # ── Build card ───────────────────────────────────────────────────────────
     free_card = (tier == 'free')
     label     = 'FREE TEASER' if free_card else tier.upper()
 
+    # Determine WIN (resolved) vs ENTRY (open/unresolved market)
+    end_str = getattr(bw, 'end_date', '') or ''
+    is_open = True
+    if end_str:
+        try:
+            from datetime import datetime, timezone as tz
+            end_dt = datetime.fromisoformat(end_str.replace('Z', '+00:00')).replace(tzinfo=tz.utc)
+            is_open = end_dt > datetime.now(tz.utc)
+        except:
+            pass
+    alert_type = 'WHALE ENTRY' if is_open else 'WHALE WIN'
+
+    # Sport emoji detection
+    q_lower = getattr(bw, 'market_question', '').lower()
+    sport_emoji = ''
+    if any(k in q_lower for k in ['mets','yankees','dodgers','athletics','rangers','red sox','cubs','sox','mariners','padres',' Rockies','brewers','phillies','marlins','diamondbacks','giants','nationals','orioles','astros','guardians','twins','tigers','reds']):
+        sport_emoji = '⚾'
+    elif any(k in q_lower for k in ['lakers','celtics','warriors','nba','basketball','knicks','hawks','spurs','bulls','heat','suns','bucks','76ers']):
+        sport_emoji = '🏀'
+    elif any(k in q_lower for k in ['nfl','bengals','ravens','cowboys','eagles','chiefs','packers','bills','patriots','nfl','football','super bowl']):
+        sport_emoji = '🏈'
+    elif any(k in q_lower for k in ['hockey','rangers','bruins','flyers','penguins','devils','avalanche','golden knights','kraken','jets','flyers','wings']):
+        sport_emoji = '🏒'
+    elif any(k in q_lower for k in ['ufc','mma','boxing','fight','spann','griffin','suarez','barcelos']):
+        sport_emoji = '🥊'
+    elif any(k in q_lower for k in ['tennis','wimbledon','us open','madrid open','australian open','serena','nadal','alcaraz']):
+        sport_emoji = '🎾'
+    elif any(k in q_lower for k in ['golf','masters','pga','Tiger Woods']):
+        sport_emoji = '⛳'
+    elif any(k in q_lower for k in ['soccer','fc','Real Madrid','Barcelona','Manchester','liverpool','chelsea','arsenal','leicester']):
+        sport_emoji = '⚽'
+    elif any(k in q_lower for k in ['ipl','cricket','delhi capitals','sunrisers','lucknow super','mumbai indians']):
+        sport_emoji = '🏏'
+
+    # Classification badge
+    profit_val = getattr(bw, 'profit_usdc', 0) or 0
+    roi_val    = getattr(bw, 'roi_pct', 0) or 0
+    wr_val     = getattr(bw, 'win_rate', 0) or 0
+    streak_val = getattr(bw, 'win_streak', 0) or 0
+    size_val   = getattr(bw, 'trade_size_usdc', 0) or 0
+
+    classification_badge = ''
+    if wr_val >= 65 and streak_val >= 3: classification_badge = '⚡ Elite Pick'
+    elif streak_val >= 5:               classification_badge = '🔥 Hot Streak!'
+    elif wr_val >= 65:                  classification_badge = '🏆 High Win-Rate'
+    elif profit_val >= 100000:          classification_badge = '💰 Six-Figure Profit'
+    elif size_val >= 100000:            classification_badge = '🐋 Whale Alert'
+
+    # Sport emoji detection
+    q_lower = getattr(bw, 'market_question', '').lower()  # for sport emoji detection
+    sport_emoji = ''
+    if any(k in q_lower for k in ['mets','yankees','dodgers','athletics','rangers','red sox','cubs','sox','mariners','padres',' Rockies','brewers','phillies','marlins','diamondbacks','giants','nationals','orioles','astros','guardians','twins','tigers','reds']):
+        sport_emoji = '⚾'
+    elif any(k in q_lower for k in ['lakers','celtics','warriors','nba','basketball','knicks','hawks','spurs','bulls','heat','suns','bucks','76ers']):
+        sport_emoji = '🏀'
+    elif any(k in q_lower for k in ['nfl','football','super bowl','cowboys','eagles','chiefs','packers','bills','patriots','bengals','ravens']):
+        sport_emoji = '🏈'
+    elif any(k in q_lower for k in ['hockey','rangers','bruins','flyers','penguins','devils','avalanche','golden knights','kraken','jets','flyers','wings','predators','sabres']):
+        sport_emoji = '🏒'
+    elif any(k in q_lower for k in ['ufc','mma','boxing','fight','spann','griffin','suarez','barcelos']):
+        sport_emoji = '🥊'
+    elif any(k in q_lower for k in ['tennis','wimbledon','us open','madrid open','australian open','serena','nadal','alcaraz']):
+        sport_emoji = '🎾'
+    elif any(k in q_lower for k in ['golf','masters','pga','Tiger Woods']):
+        sport_emoji = '⛳'
+    elif any(k in q_lower for k in ['soccer','fc','Real Madrid','Barcelona','Manchester','liverpool','chelsea','arsenal','leicester',' IPL','cricket','delhi capitals','sunrisers']):
+        sport_emoji = '⚽'
+    elif any(k in q_lower for k in ['ipl','cricket','sunrisers hyderabad','lucknow super giants','mumbai indians']):
+        sport_emoji = '🏏'
+
     # Header with 🏅 inline
-    header = f'<b>🟢 WHALE WIN [{label}] 🏅</b>'
+    header = f'<b>🟢 {classification_badge} [{label}] 🏅</b>' if classification_badge else f'<b>🟢 {alert_type} [{label}] 🏅</b>'
 
-    # Market question — truncate at 72 chars
+    # Market question — truncate at 72 chars, prepend sport emoji
     q = getattr(bw, 'market_question', '?')[:72]
-    market = f'<b>🏅 {q}</b>'
+    market = f'<b>🏅 {sport_emoji} {q}</b>' if sport_emoji else f'<b>🏅 {q}</b>'
 
-    # Direction
+    # Direction + explicit play target (v2.1)
+    q = getattr(bw, 'market_question', '') or ''
+    q_main = q.replace('🏅', '').strip()
+    if ' vs. ' in q_main:
+        left, right = q_main.split(' vs. ', 1)
+    elif ' vs ' in q_main:
+        left, right = q_main.split(' vs ', 1)
+    else:
+        left, right = q_main, ''
+    left_t  = left.strip(' -–—:').strip()
+    right_t = right.strip(' -–—:').strip()
+    yes_target = f'{left_t} WIN' if left_t else 'THE LEFT SIDE WIN'
+    no_target  = f'{right_t} WIN' if right_t else 'THE RIGHT SIDE WIN'
     direction = getattr(bw, 'outcome', '') or ''
     if direction.upper().startswith(('DOWN', 'NO')):
-        bet = f'<b>🎯 ⬇️ BET DOWN on {direction}</b>'
+        bet = f'<b>🎯 ⬇️ BET NO — {no_target}</b>'
     else:
-        bet = f'<b>🎯 ⬆️ BET UP on {direction}</b>' if direction else '<b>🎯 ⬆️ BET UP</b>'
+        bet = f'<b>🎯 ⬆️ BET YES — {yes_target}</b>'
 
     # ── Profit / ROI — both green or both red ────────────────────────────
     profit_usdc = getattr(bw, 'profit_usdc', 0) or 0
     roi_pct     = getattr(bw, 'roi_pct', 0) or 0
     if profit_usdc >= 0:
-        profit = f'✅ <b>${profit_usdc:,.0f}</b> | <b>✅ +{roi_pct:.0f}% ROI</b>'
+        roi_label = 'potential ROI' if getattr(bw, 'is_open', True) else 'ROI'
+        profit = f'✅ <b>${profit_usdc:,.0f}</b> | <b>✅ +{roi_pct:.0f}% {roi_label}</b>'
     else:
         profit = f'💰 <b>${profit_usdc:,.0f}</b> | <b>💲 {roi_pct:.0f}% ROI</b>'
 
@@ -341,13 +484,38 @@ def format_card(bw, tier='PRO'):
     lt_badge, lt_str = wr_badge(wr_lt)
     wr30_badge, wr30_str = wr_badge(wr_30)
 
+    # Compute confidence score (0-100)
+    profit_val = getattr(bw, 'profit_usdc', 0) or 0
+    roi_val    = getattr(bw, 'roi_pct', 0) or 0
+    wr_val     = getattr(bw, 'win_rate', 0) or 0
+    streak_val = getattr(bw, 'win_streak', 0) or 0
+    size_val   = getattr(bw, 'trade_size_usdc', 0) or 0
+
+    score  = min(100, int(
+        (20 if profit_val >= 50000 else 10 if profit_val >= 10000 else 5) +
+        (20 if roi_val >= 100 else 15 if roi_val >= 50 else 8) +
+        (20 if wr_val >= 65 else 10 if wr_val >= 45 else 3) +
+        (15 if streak_val >= 5 else 8 if streak_val >= 3 else 0) +
+        (15 if size_val >= 50000 else 10 if size_val >= 10000 else 0)
+    ))
+    conf_lbl = f'[Confidence: {score}%]'
+
+    roi_lt = getattr(bw, 'roi_pct', 0) or 0
+    roi_lbl = f'✅ ${abs(roi_lt):,.0f} P/L' if roi_lt >= 0 else f'💲 ${abs(roi_lt):,.0f} P/L'
+    wr_parts = []
     if wr_lt > 0:
-        if wr_30 > 0:
-            wr = f'{lt_badge} {lt_str} lifetime WR   {wr30_badge} | {wr30_str} 30d WR  (n={n_trades})'
-        else:
-            wr = f'{lt_badge} {lt_str} lifetime WR  (n={n_trades})'
+        wr_parts.append(f'{lt_badge} {lt_str} Wallet WR')
     else:
-        wr = ''
+        wr_parts.append('🏆 -- Wallet WR')
+    if wr_30 > 0:
+        wr_parts.append(f'{wr30_badge} {wr30_str} 30D WR')
+    else:
+        wr_parts.append('🏆 -- 30D WR')
+    if n_trades > 0:
+        wr_parts.append(f'n={n_trades}')
+    wr = ' | '.join(wr_parts)
+    wr2_parts = [conf_lbl, roi_lbl]
+    wr2 = ' | '.join(wr2_parts)
 
     # ── Streak ───────────────────────────────────────────────────────────────
     streak = getattr(bw, 'win_streak', 0) or 0
@@ -359,30 +527,39 @@ def format_card(bw, tier='PRO'):
         streak_badge = ''
 
     # ── Wallet label (🐋 not 👤) ────────────────────────────────────────────
-    trader = f'🐋 {_whale_label(bw.wallet, bw.display_name)}'
+    def _ellipsize_wallet(addr: str) -> str:
+        if not addr:
+            return '0x....'
+        if len(addr) <= 12:
+            return addr
+        return f'{addr[:6]}...{addr[-5:]}'
 
-    # ── Polymarket link (⛓️ not 🧭) ────────────────────────────────────────
-    market_id = getattr(bw, 'market_id', '') or ''
-    link = f'⛓️ https://polymarket.com/event/{market_id}'
+    trader_wallet = _ellipsize_wallet(getattr(bw, 'wallet', ''))
+    wallet_url = f'https://polymarket.com/@{getattr(bw, "wallet", "").lower()}' if getattr(bw, 'wallet', '') else ''
+    trader = f'🐋 [{trader_wallet}]({wallet_url}) 🌊' if wallet_url else f'🐋 {trader_wallet} 🌊'
+
+    # No separate visible URL line; the wallet text itself carries the hyperlink.
+    link = ''
 
     # ── Dates + wallet % of leaderboard ─────────────────────────────────────
     trade_ts   = getattr(bw, 'timestamp', None)
-    trade_date = dt.datetime.fromtimestamp(trade_ts, tz=dt.timezone.utc).strftime('%b %d %Y') if trade_ts else '?'
-    end_date   = end_date_str[:10] if end_date_str else '?'
+    trade_date = dt.datetime.fromtimestamp(trade_ts, tz=dt.timezone.utc).strftime('%b-%d-%y') if trade_ts else '?'
+    end_date   = dt.datetime.fromisoformat(end_date_str.replace('Z', '+00:00')).strftime('%b-%d-%y') if end_date_str else '?'
     vol        = getattr(bw, 'leaderboard_volume', 0) or 0
     wallet_pct = f' ({size / vol * 100:.1f}% of wallet)' if vol and vol > 0 else ''
-    dates      = f'📅 Opened: {trade_date} | Resolved: {end_date}{wallet_pct}'
+    dates      = f'📅 O: {trade_date} | Closing: {end_date}{wallet_pct}' if is_open else f'📅 O: {trade_date} | Resolved: {end_date}{wallet_pct}'
 
     # ── Assemble ─────────────────────────────────────────────────────────────
-    sep = '——————————'
+    sep = '————————————————————————'
     if free_card:
-        lines = [header, sep, market, sep, profit, size_line, bet, dates, sep, link]
+        lines = [header, sep, market, sep, profit, size_line, '', bet, dates, sep]
     else:
-        lines = [header, sep, market, sep, profit, size_line, bet, dates]
-        if wr:       lines.append(wr)
+        lines = [header, sep, market, sep, profit, size_line, '', bet, dates]
+        if wr:           lines.append(wr)
+        if wr2:          lines.append(wr2)
         if streak_badge: lines.append(streak_badge)
-        lines += [sep, trader, link]
-    return '\n'.join(lines) + '\n'
+        lines += [sep, trader]
+    return '\n'.join(str(x) for x in lines)
 
 
 
@@ -395,6 +572,7 @@ def process_queue(state):
         return
     now = datetime.now(timezone.utc)
     updated = []
+    dirty = False
     for item in queue:
         queued_at = datetime.fromisoformat(item['queued_at']).replace(tzinfo=timezone.utc)
         cat_ready  = (now - queued_at) >= CAT_DELAY
@@ -403,94 +581,134 @@ def process_queue(state):
 
         # Pro channel — fire once when ready (3-min delay)
         if pro_ready and not item.get('pro_sent'):
-            send(CHANNELS['hub'], format_card(bw_from_item(item), 'pro'))
-            log.info(f'PRO delay fired: {item["question"][:40]}')
-            item['pro_sent'] = True
+            bw = bw_from_item(item)
+            if bw is None:
+                log.info(f'PRO filtered (resolved/null): {item["question"][:40]}')
+                item['pro_sent'] = True
+                dirty = True
+                continue
 
-        # Category channel — fire once when ready to the HIGHEST CONFIDENCE category
+            # CLOB validation for queued items (check once per item)
+            if not item.get('_clob_validated'):
+                enriched = validate_and_enrich(bw)
+                if enriched is None:
+                    log.info(f'CLOB rejected queued item: {item.get("market_id","")[:20]}...')
+                    item['pro_sent'] = True  # mark sent so it won't reprocess
+                    dirty = True
+                    continue
+                item['_clob_validated'] = True
+            card = format_card(bw, 'pro', CHANNELS['hub'])
+            if card:
+                send(CHANNELS['hub'], card)
+                log.info(f'PRO delay fired: {item["question"][:40]}')
+                item['pro_sent'] = True
+                dirty = True
+            else:
+                log.info(f'PRO filtered (null card): {item["question"][:40]}')
+                item['pro_sent'] = True
+                dirty = True
+
+        # Category routing is hub-only now.
+        # The Hub is the intake/router; no direct category sends from this daemon.
         if cat_ready and item.get('cat_sent') != item['cats']:
-            cats = item['cats']
-            best_cat = item.get('best_cat', 'pro')
-            if best_cat and best_cat != 'pro':
-                cid = CHANNELS.get(best_cat)
-                if cid:
-                    # Calculate and log confidence score for QA
-                    q = item['question'].lower()
-                    score = sum(1 for kw in SPORTS_KW if kw in q) if best_cat == 'sports' else \
-                            sum(1 for kw in ESPORTS_KW if kw in q) if best_cat == 'esports' else \
-                            sum(1 for kw in CRYPTO_KW if kw in q) if best_cat == 'crypto' else \
-                            sum(1 for kw in WEATHER_KW if kw in q) if best_cat == 'weather' else \
-                            sum(1 for kw in POLITICS_KW if kw in q) if best_cat == 'politics' else \
-                            sum(1 for kw in WORLD_KW if kw in q) if best_cat == 'world' else \
-                            sum(1 for kw in ECON_KW if kw in q) if best_cat == 'econ' else 0
-                    send(cid, format_card(bw_from_item(item), best_cat))
-                    log.info(f'Category forward ({best_cat}) [score={score}]: {item["question"][:40]}')
             item['cat_sent'] = item['cats']
+            dirty = True
+            log.info(f'Category routing deferred to Hub for: {item["question"][:40]}')
 
-        # Free channel — fire when ready (15 min for curated, 90 min for others)
+        # ⚡ Free channel disabled during v2.0 rollout: Hub + PRO only.
+        # ⚠️ Keep queued items for downstream review, but do not emit to free channels.
         curated_ready = (now - queued_at) >= CURATED_DELAY
         free_ready    = (now - queued_at) >= FREE_DELAY
         item_ready    = curated_ready if item.get('is_curated') else free_ready
 
         if item_ready and not item.get('free_sent'):
-            if item.get('is_curated'):
-                # Send FULL PRO card to free tier (conversion hook — user sees full value)
-                send(CHANNELS['free'], format_card(bw_from_item(item), 'pro'))
-                log.info(f'★ CURATED FREE sent: {item["question"][:40]}')
-            else:
-                send(CHANNELS['free'], format_card(bw_from_item(item), 'free'))
-                log.info(f'FREE delay fired: {item["question"][:40]}')
-            state['total_sent'] += 1
+            log.info(f'FREE disabled during rollout; retaining queued item: {item["question"][:40]}')
             item['free_sent'] = True
-            continue  # drop from queue
+            continue  # drop from queue without sending
 
         updated.append(item)
 
-    if len(updated) < len(queue):
+    if dirty or len(updated) < len(queue):
         save_queue(updated)
 
 def bw_from_item(item):
-    """Reconstruct a minimal object from queued item for formatting."""
+    """Reconstruct a minimal object from queued item. Returns None if market is resolved."""
+    from datetime import datetime, timezone as _tz
+
+    # Safety: reject already-resolved markets at format time
+    end = item.get('end_date', '')
+    if end:
+        try:
+            end_dt = datetime.fromisoformat(end.replace('Z', '+00:00')).replace(tzinfo=_tz.utc)
+            if end_dt < datetime.now(_tz.utc):
+                return None  # resolved, don't show
+        except (ValueError, TypeError):
+            pass
+
+    # Build a simple namespace object instead of a class
     import json as _json
     class BW:
-        def __init__(self, d):
-            self.market_question = d.get('question','')
-            self.market_id        = d.get('market_id','')
-            self.wallet           = d.get('wallet','')
-            self.profit_usdc      = d.get('profit_usdc', 0)
-            self.roi_pct          = d.get('roi_pct', 0)
-            self.trade_size_usdc  = d.get('trade_size_usdc', 0)
-            self.display_name     = d.get('display_name', '')
-            self.timestamp        = d.get('timestamp')   # FIX: was None
-            self.leaderboard_volume = d.get('leaderboard_volume', 0)
-            self.outcome          = d.get('outcome','')
-            self.end_date         = d.get('end_date','')
-            self.avg_price        = d.get('avg_price', 0)
-            self.is_curated       = d.get('is_curated', False)
+        pass
 
-            # Look up wallet profile for real win rate / streak / trade count
-            wp_path = Path('/tmp/wallet_profiles.json')
-            if wp_path.exists():
-                try:
-                    wps = _json.loads(wp_path.read_text())
-                    waddr = (self.wallet or '').lower()
-                    if waddr in wps:
-                        wp = wps[waddr]
-                        self.win_rate         = wp.get('win_rate', 0) or 0
-                        self.win_rate_30d     = wp.get('win_rate_30d', 0) or 0
-                        self.total_positions  = wp.get('total_positions', 0) or 0
-                        self.win_streak       = wp.get('current_streak', 0) or 0
-                        return
-                except Exception:
-                    pass
+    bw = BW()
+    bw.market_question     = item.get('question','')
+    bw.market_id           = item.get('market_id','')
+    bw.wallet              = item.get('wallet','')
+    bw.profit_usdc         = item.get('profit_usdc', 0)
+    bw.roi_pct             = item.get('roi_pct', 0)
+    bw.trade_size_usdc     = item.get('trade_size_usdc', 0)
+    bw.display_name         = item.get('display_name', '')
+    bw.timestamp            = item.get('timestamp')
+    bw.leaderboard_volume  = item.get('leaderboard_volume', 0)
+    bw.outcome             = item.get('outcome','')
+    bw.end_date            = item.get('end_date','')
+    bw.avg_price           = item.get('avg_price', 0)
+    bw.is_curated          = item.get('is_curated', False)
+    bw.win_rate            = getattr(bw, 'win_rate', 0) or 0
+    bw.win_rate_30d        = getattr(bw, 'win_rate_30d', 0) or 0
+    bw.total_positions      = getattr(bw, 'total_positions', 0) or 0
+    bw.win_streak          = getattr(bw, 'win_streak', 0) or 0
 
-            # Fallback: from item itself (or 0)
-            self.win_rate         = d.get('win_rate', 0)
-            self.win_rate_30d     = d.get('win_rate_30d', 0)
-            self.total_positions = d.get('total_positions', 0)
-            self.win_streak      = d.get('win_streak', 0)
+    # Look up wallet profile for real win rate / streak / trade count
+    import os, sqlite3
+    wp_path = os.path.join(os.path.dirname(__file__), '__pycache__', '..', 'wallet_profiles.json')
+    if not os.path.exists(wp_path):
+        wp_path = '/tmp/wallet_profiles.json'
+    loaded_profile = False
+    if os.path.exists(wp_path):
+        try:
+            wps = _json.loads(open(wp_path).read())
+            waddr = (bw.wallet or '').lower()
+            if waddr in wps:
+                wp = wps[waddr]
+                bw.win_rate        = wp.get('win_rate', 0) or 0
+                bw.win_rate_30d    = wp.get('win_rate_30d', 0) or 0
+                bw.total_positions = wp.get('total_positions', 0) or 0
+                bw.win_streak      = wp.get('current_streak', 0) or 0
+                loaded_profile = True
+        except Exception:
+            pass
+    if not loaded_profile:
+        try:
+            db_path = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
+            if os.path.exists(db_path):
+                conn = sqlite3.connect(db_path)
+                row = conn.execute('SELECT total_pnl, win_rate_pct, roi_30d, total_positions FROM tracked_wallets WHERE wallet_address=?', ((bw.wallet or '').lower(),)).fetchone()
+                conn.close()
+                if row:
+                    # prefer the live wallet tracker if available
+                    bw.win_rate        = row[1] or bw.win_rate or 0
+                    bw.win_rate_30d    = row[2] or bw.win_rate_30d or 0
+                    bw.total_positions = row[3] or bw.total_positions or 0
+        except Exception:
+            pass
 
-    return BW(item)
+    # Fallback: from item
+    bw.win_rate        = bw.win_rate        or item.get('win_rate', 0)
+    bw.win_rate_30d    = bw.win_rate_30d    or item.get('win_rate_30d', 0)
+    bw.total_positions = bw.total_positions or item.get('total_positions', 0)
+    bw.win_streak     = bw.win_streak      or item.get('win_streak', 0)
+    return bw
 
 
 def _is_curated_pick(bw, state):
@@ -578,6 +796,18 @@ def run():
 
     queue = load_queue()
 
+    # ── CLOB Validation: reject closed/already-started markets ────────
+    validated_bws = []
+    for bw in new_bws:
+        enriched = validate_and_enrich(bw)
+        if enriched is None:
+            log.info(f"CLOB rejected: {bw.market_id[:20]}...")
+            continue
+        validated_bws.append(bw)
+    skipped = len(new_bws) - len(validated_bws)
+    new_bws = validated_bws
+    log.info(f"CLOB validation: {len(new_bws)} passed, {skipped} rejected")
+
     for bw in new_bws:
         key   = f'{bw.market_id}_{bw.wallet}'
         cats, best_cat = detect_categories_with_confidence(bw.market_question)
@@ -627,7 +857,7 @@ def run():
 
         seen.add(key)
         state['total_sent'] += 1
-        log.info(f'Queued: {bw.market_question[:50]} -> cats={cats} | free in {FREE_DELAY}')
+        log.info(f'Queued: {bw.market_question[:50]} -> cats={cats} | curated in {CURATED_DELAY} | free in {FREE_DELAY}')
 
     save_queue(queue)
     state['seen_keys'] = list(seen)[-1000:]
@@ -644,4 +874,4 @@ if __name__ == '__main__':
             _time.sleep(60)
             continue
         run()
-        _time.sleep(120)  # 2 min between cycles
+        _time.sleep(120)  # 2 min router poll interval

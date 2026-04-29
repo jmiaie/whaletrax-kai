@@ -52,6 +52,14 @@ def _load_token():
 
 TOKEN   = _load_token() or '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'
 CHAT_ID = '-1003786930778'
+MAX_ALERTS_RUN = 5          # max alerts per run to avoid flooding
+POLL_TOP_N     = 20         # leaderboard wallets to scan
+MIN_PROFIT     = 500        # USD
+MIN_ROI        = 50         # percent
+MIN_SIZE       = 100         # USD cost basis
+
+TOKEN   = os.environ.get('WHALETRAX_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8741871021:AAF_OJ0rkE5T_bq4YXT_RPUwWG07bYs8I3g'))
+CHAT_ID = os.environ.get('WHALETRAX_CHAT_ID', os.environ.get('POLYSHARK_HUB_CHAT_ID', '-1003786930778'))
 
 # Logging
 logging.basicConfig(

@@ -13,6 +13,19 @@ Plus one unified wrapper used by live_entry_tracker.py / Kai:
 """
 
 from PIL import Image, ImageDraw, ImageFont
+
+def _sport_emoji(q: str) -> str:
+    q = q.lower()
+    if any(k in q for k in ['mets','yankees','dodgers','athletics','rangers','red sox','cubs','sox','mariners','padres','rockies','brewers','phillies','marlins','diamondbacks','giants','nationals','orioles','astros','guardians','twins','tigers','reds']): return '⚾'
+    if any(k in q for k in ['lakers','celtics','warriors','nba','basketball','knicks','hawks','spurs','bulls','heat','suns','bucks','76ers']): return '🏀'
+    if any(k in q for k in ['nfl','football','cowboys','eagles','chiefs','packers','bills','patriots']): return '🏈'
+    if any(k in q for k in ['hockey','bruins','flyers','penguins','devils','avalanche','golden knights','kraken','jets']): return '🏒'
+    if any(k in q for k in ['ufc','mma','spann','griffin','suarez','barcelos','godinez']): return '🥊'
+    if any(k in q for k in ['tennis','wimbledon','us open','madrid open','australian open']): return '🎾'
+    if any(k in q for k in ['golf','masters','pga','tiger woods']): return '⛳'
+    if any(k in q for k in ['soccer','fc','real madrid','barcelona','manchester','liverpool','chelsea','arsenal','leicester',' IPL','cricket','delhi capitals','sunrisers']): return '⚽'
+    if any(k in q for k in ['ipl','cricket','sunrisers hyderabad','lucknow super giants','mumbai indians']): return '🏏'
+    return ''
 import os
 from datetime import datetime
 import math
@@ -80,7 +93,7 @@ def generate_card(
     market_question: str,
     direction: str,          # 'UP' or 'DOWN'
     profit: float,           # signed profit (positive = win)
-    roi: float,              # ROI % (signed)
+    roi: float,              # Lifetime ROI % (signed)
     size_usdc: float,
     masked_wallet: str,      # e.g. '0x....abcd'
     lifetime_wr: float = 0,
@@ -92,11 +105,18 @@ def generate_card(
     market_url: str = '',
     whale_badge: bool = False,
     confidence: str = 'HIGH',
+    lifetime_roi: float = 0.0,   # Lifetime ROI % (e.g. 67.5)
+    roi_30d: float = 0.0,        # 30-day ROI % (e.g. 42.1)
+    win_rate_30d: float = 0.0,   # 30-day win rate % (e.g. 72.0)
+    confidence_score: int = 0,   # 0-100 score
+    is_open: bool = True,           # True=ENTRY, False=WIN
     img_path: str = '/tmp/polyshark_card.png',
 ) -> str:
     height = 510
     if whale_badge: height += 44
     if current_streak >= 5: height += 40
+    if lifetime_roi != 0: height += 38
+    if roi_30d != 0: height += 38
 
     img  = Image.new('RGB', (WIDTH, height), color=BG)
     draw = ImageDraw.Draw(img)
@@ -109,6 +129,17 @@ def generate_card(
 
     # ── HEADER ──────────────────────────────────────────────────────────────
     draw.rectangle([0, 0, WIDTH, 58], fill=CARD_BG)
+    # WIN vs ENTRY based on market status
+    from datetime import datetime, timezone as tz
+    is_open_card = True
+    try:
+        if ts_resolved > 0:
+            is_open_card = datetime.now(tz.utc) < datetime.fromtimestamp(ts_resolved, tz=tz.utc)
+    except: pass
+    # Add sport emoji to question
+    sq = _sport_emoji(market_question)
+    sq_label = f'{sq} {market_question}' if sq else market_question
+
     draw.text((PAD, 16), 'POLYSHARK', font=get_font(20, bold=True), fill=TEAL)
     draw.text((PAD + 172, 18), 'WHALE TRACKER', font=f14, fill=MUTED)
 
@@ -134,7 +165,7 @@ def generate_card(
     dw     = draw.textlength(dir_label, font=f24)
     q_font = get_font(24, bold=True)
     max_qw = WIDTH - PAD - dw - 10
-    words  = market_question.split()
+    words  = sq_label.split()  # with sport emoji
     lines, line = [], []
     for w in words:
         test = ' '.join(line + [w])
@@ -164,14 +195,38 @@ def generate_card(
     draw.text((WIDTH - PAD - sw, y), size_str, font=f24, fill=WHITE)
     y += 44
 
-    # ── WIN RATE ────────────────────────────────────────────────────────────
+    # ── WIN RATE + LIFETIME ─────────────────────────────────────────────────
     divider(draw, y); y += 14
     wr_col, wr_lbl = wr_badge(lifetime_wr)
-    if wr_lbl: draw.text((PAD, y), wr_lbl, font=f20b, fill=wr_col)
+    if wr_lbl:
+        draw.text((PAD, y), wr_lbl, font=f20b, fill=wr_col)
+        draw.text((PAD + 145, y), 'LIFETIME', font=f16, fill=MUTED)
+        if lifetime_roi != 0:
+            roi_col_l = GREEN if lifetime_roi >= 0 else RED
+            roi_sign = '+' if lifetime_roi >= 0 else ''
+            roi_label_l = 'potential ROI' if is_open else 'ROI'
+            draw.text((PAD + 220, y), f'{roi_sign}{lifetime_roi:.1f}% {roi_label_l}', font=f20b, fill=roi_col_l)
     if trades_n > 0:
         n_str = f'  n={trades_n}'
-        draw.text((PAD + 280, y), n_str, font=f20b, fill=MUTED)
-    y += 36
+        draw.text((PAD + 400, y), n_str, font=f16, fill=MUTED)
+    y += 34
+
+    # ── 30d Win Rate + 30d ROI ─────────────────────────────────────────
+    if roi_30d != 0:
+        divider(draw, y); y += 14
+        roi_col_30 = GREEN if roi_30d >= 0 else RED
+        roi_sign_30 = '+' if roi_30d >= 0 else ''
+        wr30_val = win_rate_30d or 0
+        if wr30_val > 0:
+            wr30_badge_col = GREEN if wr30_val >= 65 else (AMBER if wr30_val >= 45 else RED)
+            draw.text((PAD, y), f'🏆 {wr30_val:.0f}% WR', font=f20b, fill=wr30_badge_col)
+            draw.text((PAD + 145, y), '30D', font=f16, fill=MUTED)
+            roi_label_30 = 'potential ROI' if is_open else 'ROI'
+            draw.text((PAD + 190, y), f'{roi_sign_30}{roi_30d:.1f}% {roi_label_30}', font=f20b, fill=roi_col_30)
+        else:
+            roi_label_30 = 'potential ROI' if is_open else 'ROI'
+            draw.text((PAD, y), f'🏆 30D WR | {roi_sign_30}{roi_30d:.1f}% {roi_label_30}', font=f20b, fill=roi_col_30)
+        y += 34
 
     # ── STREAK ─────────────────────────────────────────────────────────────
     st_b = streak_badge(current_streak)
@@ -191,9 +246,7 @@ def generate_card(
     y += 30
 
     # ── LINKS ───────────────────────────────────────────────────────────────
-    if market_url:
-        divider(draw, y); y += 14
-        draw.text((PAD, y), f'⛓️ {market_url}', font=f16, fill=TEAL)
+    # URLs omitted — Polymarket restricts crypto/specialty markets globally
 
     # ── FOOTER ──────────────────────────────────────────────────────────────
     footer_y = y + 28
@@ -223,10 +276,16 @@ def generate_loss_card(
     ts_resolved: int = 0,
     market_url: str = '',
     confidence: str = 'MEDIUM',
+    lifetime_roi: float = 0.0,
+    roi_30d: float = 0.0,
+    confidence_score: int = 0,
+    is_open: bool = True,
     img_path: str = '/tmp/polyshark_loss_card.png',
 ) -> str:
     height = 510
     if current_streak >= 5: height += 40
+    if lifetime_roi != 0: height += 38
+    if roi_30d != 0: height += 38
 
     img  = Image.new('RGB', (WIDTH, height), color=BG)
     draw = ImageDraw.Draw(img)
@@ -238,6 +297,14 @@ def generate_loss_card(
 
     # ── HEADER (red accent) ─────────────────────────────────────────────────
     draw.rectangle([0, 0, WIDTH, 58], fill=(30, 14, 14))
+    # WIN vs ENTRY based on market status
+    from datetime import datetime, timezone as tz
+    is_open_card = True
+    try:
+        if ts_resolved > 0:
+            is_open_card = datetime.now(tz.utc) < datetime.fromtimestamp(ts_resolved, tz=tz.utc)
+    except: pass
+
     draw.text((PAD, 16), 'POLYSHARK', font=get_font(20, bold=True), fill=RED)
     draw.text((PAD + 172, 18), 'WHALE TRACKER', font=f14, fill=MUTED)
 
@@ -254,7 +321,7 @@ def generate_loss_card(
     dw     = draw.textlength(dir_label, font=f24)
     q_font = get_font(24, bold=True)
     max_qw = WIDTH - PAD - dw - 10
-    words  = market_question.split()
+    words  = sq_label.split()  # with sport emoji
     lines, line = [], []
     for w in words:
         test = ' '.join(line + [w])
@@ -283,13 +350,35 @@ def generate_loss_card(
     draw.text((WIDTH - PAD - sw, y), size_str, font=f24, fill=WHITE)
     y += 44
 
-    # ── WIN RATE ────────────────────────────────────────────────────────────
+    # ── WIN RATE + LIFETIME ROI ───────────────────────────────────────────
     divider(draw, y); y += 14
     wr_col, wr_lbl = wr_badge(lifetime_wr)
     if wr_lbl: draw.text((PAD, y), wr_lbl, font=f20b, fill=wr_col)
     if trades_n > 0:
         draw.text((PAD + 280, y), f'  n={trades_n}', font=f20b, fill=MUTED)
+    if lifetime_roi != 0:
+        roi_col_l = GREEN if lifetime_roi >= 0 else RED
+        roi_sign = '+' if lifetime_roi >= 0 else ''
+        roi_lbl_l = f'{roi_sign}{lifetime_roi:.1f}% lifetime ROI'
+        draw.text((PAD + 380, y), roi_lbl_l, font=f20b, fill=roi_col_l)
     y += 36
+
+    # ── 30d Win Rate + 30d ROI ─────────────────────────────────────────
+    if roi_30d != 0:
+        divider(draw, y); y += 14
+        roi_col_30 = GREEN if roi_30d >= 0 else RED
+        roi_sign_30 = '+' if roi_30d >= 0 else ''
+        wr30_val = win_rate_30d or 0
+        if wr30_val > 0:
+            wr30_badge_col = GREEN if wr30_val >= 65 else (AMBER if wr30_val >= 45 else RED)
+            draw.text((PAD, y), f'🏆 {wr30_val:.0f}% WR', font=f20b, fill=wr30_badge_col)
+            draw.text((PAD + 145, y), '30D', font=f16, fill=MUTED)
+            roi_label_30 = 'potential ROI' if is_open else 'ROI'
+            draw.text((PAD + 190, y), f'{roi_sign_30}{roi_30d:.1f}% {roi_label_30}', font=f20b, fill=roi_col_30)
+        else:
+            roi_label_30 = 'potential ROI' if is_open else 'ROI'
+            draw.text((PAD, y), f'🏆 30D WR | {roi_sign_30}{roi_30d:.1f}% {roi_label_30}', font=f20b, fill=roi_col_30)
+        y += 34
 
     # ── STREAK ─────────────────────────────────────────────────────────────
     st_b = streak_badge(current_streak)
@@ -309,9 +398,7 @@ def generate_loss_card(
     y += 30
 
     # ── LINKS ───────────────────────────────────────────────────────────────
-    if market_url:
-        divider(draw, y); y += 14
-        draw.text((PAD, y), f'⛓️ {market_url}', font=f16, fill=TEAL)
+    # URLs omitted — Polymarket restricts crypto/specialty markets globally
 
     # ── FOOTER ──────────────────────────────────────────────────────────────
     footer_y = y + 28
@@ -346,6 +433,17 @@ def generate_free_teaser(
 
     # ── HEADER ──────────────────────────────────────────────────────────────
     draw.rectangle([0, 0, WIDTH, 58], fill=CARD_BG)
+    # WIN vs ENTRY based on market status
+    from datetime import datetime, timezone as tz
+    is_open_card = True
+    try:
+        if ts_resolved > 0:
+            is_open_card = datetime.now(tz.utc) < datetime.fromtimestamp(ts_resolved, tz=tz.utc)
+    except: pass
+    # Add sport emoji to question
+    sq = _sport_emoji(market_question)
+    sq_label = f'{sq} {market_question}' if sq else market_question
+
     draw.text((PAD, 16), 'POLYSHARK', font=get_font(20, bold=True), fill=TEAL)
     draw.text((PAD + 172, 18), 'FREE TIER', font=f14, fill=MUTED)
 
@@ -362,7 +460,7 @@ def generate_free_teaser(
     dw     = draw.textlength(dir_label, font=f24)
     q_font = get_font(24, bold=True)
     max_qw = WIDTH - PAD - dw - 10
-    words  = market_question.split()
+    words  = sq_label.split()  # with sport emoji
     lines, line = [], []
     for w in words:
         test = ' '.join(line + [w])
@@ -423,13 +521,16 @@ def make_trade_alert_card(
     trader_pnl: float = 0.0,
     trader_wr: float = 0.0,
     trader_roi: float = 0.0,
+    trader_roi_30d: float = 0.0,
     recent_roi: float = 0.0,
     confidence: str = 'HIGH',
+    confidence_score: int = 0,   # 0-100 score
     direction_arrow: str = '📈',
     streak: int = 0,
     ts_enter: int = 0,
     ts_exit: int = 0,
     outcome: str = '',
+    is_open: bool = True,    # True = ENTRY card, False = WIN card
     img_path: str = '/tmp/polyshark_card.png',
 ) -> str:
     """Auto-select WIN or LOSS card based on unrealized P&L sign."""
@@ -458,6 +559,11 @@ def make_trade_alert_card(
             market_url       = '',
             whale_badge      = False,
             confidence       = confidence,
+            lifetime_roi     = trader_roi,
+            roi_30d          = trader_roi_30d,
+            win_rate_30d      = 0,  # not available from trader_pnl path
+            confidence_score = confidence_score,
+            is_open          = is_open,
             img_path         = img_path,
         )
     else:
@@ -469,6 +575,8 @@ def make_trade_alert_card(
             size_usdc       = size_usdc,
             masked_wallet   = masked_wallet,
             lifetime_wr     = trader_wr,
+            lifetime_roi    = trader_roi,
+            roi_30d         = trader_roi_30d,
             trades_n        = 0,
             current_streak  = 0,
             ts_opened       = ts_enter,
@@ -476,7 +584,8 @@ def make_trade_alert_card(
             ts_resolved     = 0,
             market_url      = '',
             confidence      = confidence,
-            img_path         = img_path,
+            is_open         = is_open,
+            img_path        = img_path,
         )
 
 

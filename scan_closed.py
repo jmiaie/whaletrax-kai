@@ -12,6 +12,7 @@ from alerts.polyshark_alert import make_trade_alert_card
 DB_PATH = '/home/ubuntu/.openclaw/workspace/ompa_vault/org/polyshark-alerts/polyshark.db'
 # Token for @oc_a7bot (PolysharkBot) — active in Alert Group
 BOT_TOKEN = '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'
+BOT_TOKEN = os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAGSnKLtVG3W82CdJaixmyvU1TSgZzk786c')
 
 def mask_address(addr):
     if not addr: return '0x....'
@@ -32,15 +33,7 @@ def classify_market(question):
     return 'pro'
 
 def send_telegram(photo_path, caption, channel_id):
-    import requests
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-    try:
-        with open(photo_path, 'rb') as f:
-            r = requests.post(url, data={'chat_id': channel_id, 'caption': caption[:1024], 'parse_mode': 'Markdown'}, files={'photo': f}, timeout=30)
-        return r.json().get('ok', False)
-    except Exception as e:
-        print(f"    Send error: {e}")
-        return False
+    return False
 
 def parse_end_date(end_date_str):
     """Parse ISO endDate to unix timestamp."""

@@ -42,7 +42,8 @@ from src.polymarket_client import get_user_positions
 from src.wallet_scanner import _safe_float
 from alerts.polyshark_alert import make_trade_alert_card
 
-BOT_TOKEN      = '8741871021:AAGtWosFayhX82ls7W3ZNcNh5cIQcEbAEpM'
+BOT_TOKEN      = os.environ.get('POLYSHARK_BOT_TOKEN', '')
+BOT_TOKEN      = os.environ.get('POLYSHARK_BOT_TOKEN', '')
 ALERT_GROUP_ID = '-1003786930778'
 DB_PATH        = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
 MIN_HOURS      = 48
@@ -56,27 +57,7 @@ def mask_address(addr):
     return addr[:6] + '....' + addr[-4:]
 
 def send_telegram(photo_path, caption, channel_id=ALERT_GROUP_ID):
-    import requests
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-    for attempt in range(3):
-        try:
-            with open(photo_path, 'rb') as f:
-                r = requests.post(url,
-                    data={'chat_id': channel_id, 'caption': caption[:1024], 'parse_mode': 'Markdown'},
-                    files={'photo': f}, timeout=30)
-            resp = r.json()
-            if resp.get('ok'): return resp
-            if 'Too Many Requests' in str(resp):
-                wait = int(resp.get('parameters', {}).get('retry_after', 30))
-                print(f"    ⏳ Rate limit — sleeping {wait+5}s...")
-                time.sleep(wait + 5)
-                continue
-            return resp
-        except Exception as e:
-            print(f"    ❌ Send error: {e}")
-            if attempt == 2: return {'ok': False}
-            time.sleep(5)
-    return {'ok': False}
+    return {'ok': False, 'description': 'legacy entry tracker disabled'}
 
 def load_wallets():
     with open('/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallets_seed.json') as f:
@@ -307,16 +288,7 @@ _Polyshark · Real-time whale tracking_"""
                           market_id=market_id, question=title, side=side.upper(),
                           price=price, size_usdc=amount, ts_enter=ts_now)
 
-                if img_path and os.path.exists(img_path):
-                    result = send_telegram(img_path, caption)
-                    if result.get('ok'):
-                        mark_sent(conn, addr, market_id)
-                        sent += 1
-                        print(f"  ✅ → {title[:45]}... | {amount_str}")
-                    else:
-                        print(f"  ❌ {result.get('description','error')}")
-                else:
-                    print(f"  ⚠️ No card: {title[:40]}")
+                print(f"  ⛔ Legacy entry tracker disabled for {title[:45]}...")
 
                 time.sleep(SEND_GAP)
 

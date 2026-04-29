@@ -16,6 +16,7 @@ from typing import Any, Optional
 from . import config, polymarket_client as pm
 from .models import BigWin, WalletStats
 from .wallet_scanner import _parse_leaderboard_entry, _safe_float
+from .parsers import parse_leaderboard_entry, _safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def _leaderboard_wallet_to_big_wins(entry_raw: dict[str, Any], rank: int) -> lis
     For a single leaderboard entry: fetch their closed positions and
     surface any that qualify as big wins.
     """
-    entry = _parse_leaderboard_entry(entry_raw, rank)
+    entry = parse_leaderboard_entry(entry_raw, rank)
     if not entry.proxy_wallet:
         return []
 

@@ -34,7 +34,7 @@ from src.models import (
     WalletTier,
 )
 from src.big_win_detector import scan_big_wins_for_wallet
-from src.parsers import _parse_leaderboard_entry
+from src.parsers import parse_leaderboard_entry as _parse_leaderboard_entry
 from src import polymarket_client as pm
 
 logging.basicConfig(level=logging.WARNING)

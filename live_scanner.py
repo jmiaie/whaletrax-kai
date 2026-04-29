@@ -20,17 +20,17 @@ def mask_address(addr: str) -> str:
     return addr[:6] + '....' + addr[-4:]
 
 # ── Config ──────────────────────────────────────────────────────────────────
-DB_PATH = '/home/ubuntu/.openclaw/workspace/ompa_vault/org/polyshark-alerts/polyshark.db'
-# Token for @oc_a7bot (PolysharkBot) — active in Alert Group
-BOT_TOKEN = '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'
+DB_PATH = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
+BOT_TOKEN = os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAGSnKLtVG3W82CdJaixmyvU1TSgZzk786c')
+SCANNER_TEXT_ONLY = os.environ.get('POLYSHARK_SCANNER_TEXT_ONLY', '1').lower() not in ('0', 'false', 'no', 'off')
+DB_PATH = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
+BOT_TOKEN = os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAGSnKLtVG3W82CdJaixmyvU1TSgZzk786c')
+SCANNER_TEXT_ONLY = os.environ.get('POLYSHARK_SCANNER_TEXT_ONLY', '1').lower() not in ('0', 'false', 'no', 'off')
 
 # Channel IDs (set once known — placeholder for now)
 CHANNELS = {
-    'pro':      os.environ.get('CHANNEL_POLYSHARK_PRO',      '-100XXXXXXXXX'),
-    'sports':   os.environ.get('CHANNEL_POLYSHARK_SPORTS',  '-100XXXXXXXXX'),
-    'crypto':   os.environ.get('CHANNEL_POLYSHARK_CRYPTO',  '-100XXXXXXXXX'),
-    'politics': os.environ.get('CHANNEL_POLYSHARK_POLITICS','-100XXXXXXXXX'),
-    'weather':  os.environ.get('CHANNEL_POLYSHARK_WEATHER', '-100XXXXXXXXX'),
+    'hub':      os.environ.get('CHANNEL_POLYSHARK_HUB',      '-1003786930778'),
+    'pro':      os.environ.get('CHANNEL_POLYSHARK_PRO',      '-1003739747776'),
     'free':     os.environ.get('CHANNEL_POLYSHARK_FREE',     '-1003999194095'),
 }
 
@@ -38,7 +38,12 @@ CHANNELS = {
 CRYPTO_KEYWORDS   = ['bitcoin','btc','ethereum','eth','solana','crypto','defi','token','blockchain','web3']
 SPORTS_KEYWORDS    = ['nba','nfl','nhl','mlb','soccer','football','basketball','ufc','tennis','golf','world cup','fifa','ncaa']
 POLITICS_KEYWORDS  = ['election','trump','biden','president','congress','senate','vote','republican','democrat','parliament','vote']
+WORLD_KEYWORDS     = ['iran','israel','ukraine','russia','china','taiwan','gaza','war','ceasefire','peace deal','terror','military','blockade','strait','sanction']
 WEATHER_KEYWORDS   = ['hurricane','storm','tornado','earthquake','flood','climate','temperature','rain','snow','weather']
+NEW_WALLET_MIN_TRADE_USDC = 10_000
+NEW_WALLET_MAX_AGE_DAYS = 7
+NEW_WALLET_MAX_TRADES = 3
+NEW_WALLET_PRIORITY_CATEGORIES = {'politics', 'world'}
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -55,28 +60,120 @@ def get_trader_stats(wallet: str) -> dict:
     # Use profile page __NEXT_DATA__ — simplified fallback
     # In production, we'd scrape the profile. For now, estimate from leaderboard.
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute('SELECT total_pnl_usdc, win_rate_pct, avg_roi_pct, roi_30d FROM wallets WHERE wallet_address=?', (wallet,)).fetchone()
+    row = conn.execute('SELECT total_pnl, win_rate_pct, roi_pct, roi_30d FROM tracked_wallets WHERE wallet_address=?', (wallet,)).fetchone()
     conn.close()
     if row:
-        return {'pnl': row[0] or 0, 'wr': row[1] or 50, 'roi': row[2] or 0, 'roi_30d': row[3] or 0}
+        return {
+            'pnl':    row[0] or 0,
+            'wr':    (row[1] or 0) if row[1] is not None else 50,
+            'roi':   row[2] or 0,
+            'roi_30d': row[3] or 0
+        }
     return {'pnl': 0, 'wr': 50, 'roi': 0, 'roi_30d': 0}
 
 def classify_market(question: str) -> str:
     """Auto-classify market to category channel."""
-    q = question.lower()
+    q = (question or '').lower()
     if any(k in q for k in CRYPTO_KEYWORDS):
         return 'crypto'
     if any(k in q for k in SPORTS_KEYWORDS):
         return 'sports'
     if any(k in q for k in POLITICS_KEYWORDS):
         return 'politics'
+    if any(k in q for k in WORLD_KEYWORDS):
+        return 'world'
     if any(k in q for k in WEATHER_KEYWORDS):
         return 'weather'
     return 'pro'  # default to Pro channel
 
-def send_telegram(photo_path: str, caption: str, channel_id: str) -> dict:
-    """Send photo to Telegram channel."""
+
+def is_brand_new_whale_trade(wallet: str, trade: dict, question: str) -> tuple[bool, dict]:
+    """Flag brand-new wallets making very large early trades.
+
+    Rules:
+    - wallet age <= 7 days OR total trades <= 3
+    - trade size >= $10k USDC
+    - market category is politics or world
+    - optional boost if wallet is unseen / new to the tracker
+    """
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        'SELECT added_at, total_trades, is_active FROM tracked_wallets WHERE wallet_address=?',
+        (wallet,)
+    ).fetchone()
+    conn.close()
+
+    wallet_age_days = None
+    total_trades = None
+    if row:
+        added_at = int(row[0] or 0)
+        total_trades = int(row[1] or 0)
+        if added_at > 0:
+            wallet_age_days = max(0, (int(time.time()) - added_at) / 86400)
+
+    ts_trade = int(_safe_float(trade.get('timestamp') or trade.get('createdAt')))
+    size = _safe_float(trade.get('size'))
+    price = _safe_float(trade.get('price') or trade.get('avgPrice'))
+    amount = _safe_float(trade.get('amount') or trade.get('usdcAmount'))
+    if amount == 0 and size > 0 and price > 0:
+        amount = size * price
+
+    category = classify_market(question)
+    is_new_wallet = (wallet_age_days is None) or (wallet_age_days <= NEW_WALLET_MAX_AGE_DAYS) or ((total_trades or 0) <= NEW_WALLET_MAX_TRADES)
+    is_large_trade = amount >= NEW_WALLET_MIN_TRADE_USDC
+    is_priority_category = category in NEW_WALLET_PRIORITY_CATEGORIES
+
+    matched = is_new_wallet and is_large_trade and is_priority_category
+    meta = {
+        'wallet_age_days': wallet_age_days,
+        'total_trades': total_trades,
+        'trade_amount': amount,
+        'category': category,
+        'ts_trade': ts_trade,
+        'is_new_wallet': is_new_wallet,
+        'is_large_trade': is_large_trade,
+        'is_priority_category': is_priority_category,
+    }
+    return matched, meta
+
+
+def send_text(channel_id: str, text: str) -> dict:
+    """Send a text message to Telegram."""
     import requests
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    r = requests.post(url, json={'chat_id': channel_id, 'text': text, 'disable_web_page_preview': True}, timeout=30)
+    return r.json()
+
+
+def send_free_teaser(question: str, side: str, price: float, amount: float, wallet: str, meta: dict) -> dict:
+    age_text = 'unknown' if meta.get('wallet_age_days') is None else f"{int(meta['wallet_age_days'])}d old"
+    track_text = 'NO track record' if (meta.get('total_trades') or 0) <= NEW_WALLET_MAX_TRADES else f"{int(meta.get('total_trades') or 0)} trades"
+    market_line = (question or 'Polymarket Trade')[:88]
+    teaser_line = 'Brand new wallet. Big conviction.'
+    text = (
+        f"🐋 INSIDER WHALE ALERT\n\n"
+        f"📋 {market_line}\n"
+        f"📌 {side} @ ${price:.3f} — ${amount:,.0f} USDC\n\n"
+        f"🔗 https://polymarket.com/event/{wallet[:20]}\n"
+        f"👤 {mask_address(wallet)}\n"
+        f"🔍 https://polymarket.com/profile/{wallet}\n"
+        f"⏳ Wallet age: {age_text} — {track_text}\n\n"
+        f"{teaser_line}"
+    )
+    return send_text(CHANNELS['free'], text)
+
+def send_telegram(photo_path: str, caption: str, channel_id: str) -> dict:
+    """Send alert to Telegram channel.
+
+    When POLYSHARK_SCANNER_TEXT_ONLY is enabled, emit the approved text-only
+    format. Otherwise, keep the image-card path available.
+    """
+    import requests
+    if SCANNER_TEXT_ONLY:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {'chat_id': channel_id, 'text': caption[:4096], 'disable_web_page_preview': True}
+        r = requests.post(url, json=payload, timeout=30)
+        return r.json()
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     with open(photo_path, 'rb') as f:
         files = {'photo': f}
@@ -106,16 +203,21 @@ def generate_and_send_alert(trade: dict, wallet: str, display_name: str, channel
 
     # Get trader stats
     stats       = get_trader_stats(wallet)
-    
-    # Determine category
-    category    = classify_market(question) if not channel_override else channel_override
-    
+
     # Build masked values
     masked_name   = '██████████'
     masked_wallet = mask_address(wallet)
+    category     = classify_market(question)
+    teaser_ok, teaser_meta = is_brand_new_whale_trade(wallet, trade, question)
+    if teaser_ok:
+        side_text = 'BUY YES' if side.upper() == 'BUY' else 'BUY NO'
+        teaser_result = send_free_teaser(question, side_text, price, amount, wallet, teaser_meta)
+        print(f"  → Free teaser: {'✅' if teaser_result.get('ok') else '❌ ' + str(teaser_result)}")
+    
+    # Hub-first routing: send initial batch to Hub only
     
     # Determine confidence
-    confidence = 'HIGH' if stats['pnl'] > 100000 or stats['wr'] > 60 else 'MEDIUM'
+    confidence = 'HIGH' if (stats.get('pnl') or 0) > 100000 or (stats.get('wr') or 0) > 60 else 'MEDIUM'
     direction  = '📈' if side.upper() == 'BUY' else '📉'
     
     # Generate card
@@ -137,47 +239,38 @@ def generate_and_send_alert(trade: dict, wallet: str, display_name: str, channel
         recent_roi      = stats['roi_30d'],
         confidence      = confidence,
         direction_arrow = direction,
-        streak          = None,  # streak requires Dune data
-        streak_type     = 'correct',
-        ts_enter        = ts_trade if ts_trade > 0 else int(time.time()),
-        ts_exit         = ts_exit if ts_exit > 0 else None,
+        streak          = 0,  # streak requires Dune data
+
+        ts_enter        = ts_trade if ts_trade and ts_trade > 0 else int(time.time()),
+        ts_exit         = ts_exit if ts_exit and ts_exit > 0 else 0,
         outcome         = '',    # outcome requires market resolution
         img_path        = img_path,
     )
     
-    # Build caption
+    # Build approved text-card caption
     ts_str = datetime.utcfromtimestamp(ts_trade).strftime('%b %d, %H:%M') if ts_trade > 0 else 'LIVE'
     closed_str = datetime.utcfromtimestamp(ts_exit).strftime('%b %d') if ts_exit > 0 else 'LIVE'
-    
-    caption = f"""🐋 *POLYSHARK WHALE ALERT*
+    direction_line = 'BET YES' if side.upper() == 'BUY' else 'BET NO'
+    outcome_line = question[:80] if question else 'Polymarket Trade'
+    caption = f"""🐋 POLYSHARK WHALE ALERT
 ━━━━━━━━━━━━━━━━━━
-📊 {question[:80] if question else 'Polymarket Trade'}
+📊 {outcome_line}
 ━━━━━━━━━━━━━━━━━━
-[{side.upper()}] ${price:.4f} → ${amount:,.0f}
-📅 Opened: {ts_str} | Closed: {closed_str}
+📌 {side.upper()} {direction_line} @ ${price:.4f} → ${amount:,.0f}
+📅 O: {ts_str} | Closed: {closed_str}
 ━━━━━━━━━━━━━━━━━━
-👤 {masked_name} | {masked_wallet}
-📈 P&L: ${stats['pnl']:+,.0f} | WR: {stats['wr']:.1f}% | ROI: {stats['roi']:+.1f}%
-30D ROI: {stats['roi_30d']:+.1f}%"""
+👤 {masked_name}
+🔗 https://polymarket.com/profile/{wallet}
+📈 P&L: ${stats['pnl']:+,.0f} | WR: {stats['wr']:.1f}% | ROI: {stats['roi']:+.1f}% | 30D: {stats['roi_30d']:+.1f}%
+━━━━━━━━━━━━━━━━━━
+{masked_wallet}"""
 
-    # Send to Pro first (always)
-    pro_channel = CHANNELS['pro']
-    result_pro = send_telegram(img_path, caption, pro_channel)
-    print(f"  → Sent to Pro: {'✅' if result_pro.get('ok') else '❌ ' + str(result_pro)}")
-    
-    # Send to category channel
-    if category != 'pro':
-        cat_channel = CHANNELS.get(category)
-        if cat_channel:
-            result_cat = send_telegram(img_path, caption, cat_channel)
-            print(f"  → Sent to {category.upper()}: {'✅' if result_cat.get('ok') else '❌'}")
-    
-    # For free channel — mark as "would be delayed"
-    # In production, we'd queue this for 4-6 hour delay
-    # For testing, we just log it
-    print(f"  → Free channel: QUEUED (delayed 4-6hrs)")
-    
-    return result_pro
+    # Send initial batch to Hub only
+    hub_channel = CHANNELS['hub']
+    result_hub = send_telegram(img_path, caption, hub_channel)
+    print(f"  → Sent to Hub: {'✅' if result_hub.get('ok') else '❌ ' + str(result_hub)}")
+    print(f"  → Downstream fanout: DEFERRED to Hub-side distributor")
+    return result_hub
 
 # ── Main Scanner ─────────────────────────────────────────────────────────────
 
@@ -189,8 +282,8 @@ def scan_and_alert(num_wallets: int = 10, trades_per_wallet: int = 5):
     # Load top wallets from DB
     conn = sqlite3.connect(DB_PATH)
     wallets = conn.execute('''
-        SELECT wallet_address, display_name, total_pnl_usdc, win_rate_pct, roi_30d
-        FROM wallets WHERE is_winner=1 ORDER BY total_pnl_usdc DESC LIMIT ?
+        SELECT wallet_address, display_name, total_pnl, win_rate_pct, roi_30d
+        FROM tracked_wallets ORDER BY total_pnl DESC LIMIT ?
     ''', (num_wallets,)).fetchall()
     conn.close()
     
@@ -231,7 +324,7 @@ def test_last_10():
     
     conn = sqlite3.connect(DB_PATH)
     wallets = conn.execute('''
-        SELECT wallet_address, display_name FROM wallets LIMIT 10
+        SELECT wallet_address, display_name FROM tracked_wallets LIMIT 10
     ''').fetchall()
     conn.close()
     
@@ -277,11 +370,11 @@ def test_last_10():
                     trader_wr       = stats['wr'],
                     trader_roi      = stats['roi'],
                     recent_roi      = stats['roi_30d'],
-                    confidence      = 'HIGH' if stats['pnl'] > 100000 else 'MEDIUM',
+                    confidence      = 'HIGH' if (stats.get('pnl') or 0) > 100000 else 'MEDIUM',
                     direction_arrow = '📈' if side.upper() == 'BUY' else '📉',
-                    streak          = None,
-                    ts_enter        = ts_trade if ts_trade > 0 else int(time.time()),
-                    ts_exit         = ts_exit if ts_exit > 0 else None,
+                    streak          = 0,
+                    ts_enter        = ts_trade if ts_trade and ts_trade > 0 else int(time.time()),
+                    ts_exit         = ts_exit if ts_exit and ts_exit > 0 else 0,
                     outcome         = '',
                     img_path        = img_path,
                 )
@@ -306,8 +399,9 @@ if __name__ == '__main__':
     parser.add_argument('--count',  type=int, default=10,  help='Number of wallets to scan')
     args = parser.parse_args()
     
-    if args.test:
+    if args.live:
+        scan_and_alert(num_wallets=args.count, trades_per_wallet=3)
+    elif args.test:
         test_last_10()
     else:
-        # Default: test mode
-        test_last_10()
+        scan_and_alert(num_wallets=args.count, trades_per_wallet=3)

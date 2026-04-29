@@ -25,21 +25,16 @@ except ImportError:
 BOT_TOKEN = "8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg"
 # Channel ID for Polyshark broadcasts
 CHANNEL_ID = "-1003786930778"
+BOT_TOKEN = os.environ.get("POLYSHARK_BOT_TOKEN", "")
+# Legacy sender disabled: direct broadcast channel routing is no longer used here
+CHANNEL_ID = os.environ.get("POLYSHARK_LEGACY_CHANNEL", "")
 
-BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else ""
 
 
 def send_text(message: str, parse_mode: str = "Markdown") -> dict:
-    """Send a text message to the Polyshark channel."""
-    url = f"{BASE_URL}/sendMessage"
-    payload = {
-        "chat_id": CHANNEL_ID,
-        "text": message,
-        "parse_mode": parse_mode,
-        "disable_web_page_preview": True
-    }
-    response = requests.post(url, json=payload, timeout=10)
-    return response.json()
+    """Legacy sender disabled. Use the updated router/relay path instead."""
+    return {"ok": False, "description": "legacy sender disabled"}
 
 
 def send_photo(photo_path: str, caption: str = None, parse_mode: str = "Markdown") -> dict:
@@ -52,6 +47,8 @@ def send_photo(photo_path: str, caption: str = None, parse_mode: str = "Markdown
         files = {"photo": f}
         response = requests.post(url, data=data, files=files, timeout=30)
     return response.json()
+    """Legacy sender disabled. Use the updated router/relay path instead."""
+    return {"ok": False, "description": "legacy sender disabled"}
 
 
 def send_alert_card(
@@ -114,22 +111,9 @@ def send_alert_card(
 
 
 def test_connection() -> bool:
-    """Test if the bot can reach the channel."""
-    try:
-        # Try to get chat info
-        url = f"{BASE_URL}/getChat?chat_id={CHANNEL_ID}"
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        if data.get('ok'):
-            chat = data.get('result', {})
-            print(f"✅ Connected to channel: {chat.get('title', 'Unknown')}")
-            return True
-        else:
-            print(f"❌ Channel access denied: {data.get('description', 'Unknown error')}")
-            return False
-    except Exception as e:
-        print(f"❌ Connection failed: {e}")
-        return False
+    """Legacy sender disabled."""
+    print("Legacy sender disabled. Use the updated router/relay path instead.")
+    return False
 
 
 def demo_alert():
