@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ..display import _fmt_pct, _fmt_usdc, _profit_style, console, WALLET_TRUNCATE_LEN
+from ..display import fmt_pct as _fmt_pct, fmt_usdc as _fmt_usdc, profit_style as _profit_style, console, WALLET_TRUNCATE_LEN
 from ..models import WalletStats
 from ..models import ConsistencyScore, GrowthMetrics, HoundResult, WalletTier
 

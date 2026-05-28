@@ -109,7 +109,7 @@ def _leaderboard_wallet_to_big_wins(entry_raw: dict[str, Any], rank: int) -> lis
     # Use OMPA-backed LIFETIME win rate (replaces 30-day window)
     # The 30-day window gives misleading 100% for whales with few recent trades.
     # Cumulative stats improve with every scan.
-    from wallet_profiles import get_profile, update_profile
+    from repos.whaletrax.wallet_profiles import get_profile, update_profile
     profile = get_profile(entry.proxy_wallet)
     profile.name = entry.name  # keep name fresh
     # Pass ALL closed positions at once — merge_positions dedupes and recalculates

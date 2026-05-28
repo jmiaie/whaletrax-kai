@@ -21,7 +21,7 @@ def mask_address(addr: str) -> str:
 
 # ── Config ──────────────────────────────────────────────────────────────────
 DB_PATH = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
-BOT_TOKEN = os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAGSnKLtVG3W82CdJaixmyvU1TSgZzk786c')
+BOT_TOKEN = os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8534952394:AAEwqEuXKKArRj9e_VTjc_rgKqr2yPniI0k'))
 SCANNER_TEXT_ONLY = os.environ.get('POLYSHARK_SCANNER_TEXT_ONLY', '1').lower() not in ('0', 'false', 'no', 'off')
 DB_PATH = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
 BOT_TOKEN = os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAGSnKLtVG3W82CdJaixmyvU1TSgZzk786c')
@@ -257,10 +257,9 @@ def generate_and_send_alert(trade: dict, wallet: str, display_name: str, channel
 📊 {outcome_line}
 ━━━━━━━━━━━━━━━━━━
 📌 {side.upper()} {direction_line} @ ${price:.4f} → ${amount:,.0f}
-📅 O: {ts_str} | Closed: {closed_str}
+📅 O: {ts_str} | C: {closed_str}
 ━━━━━━━━━━━━━━━━━━
 👤 {masked_name}
-🔗 https://polymarket.com/profile/{wallet}
 📈 P&L: ${stats['pnl']:+,.0f} | WR: {stats['wr']:.1f}% | ROI: {stats['roi']:+.1f}% | 30D: {stats['roi_30d']:+.1f}%
 ━━━━━━━━━━━━━━━━━━
 {masked_wallet}"""

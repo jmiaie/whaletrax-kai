@@ -11,7 +11,7 @@ import json
 import argparse
 from datetime import datetime
 
-# Add whaletrax to path for alert card generation
+# Import via editable install; fall back to explicit path during transition
 sys.path.insert(0, '/home/ubuntu/.openclaw/workspace/repos/whaletrax')
 
 try:
@@ -26,15 +26,30 @@ BOT_TOKEN = "8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg"
 # Channel ID for Polyshark broadcasts
 CHANNEL_ID = "-1003786930778"
 BOT_TOKEN = os.environ.get("POLYSHARK_BOT_TOKEN", "")
+BOT_TOKEN = os.environ.get("POLYSHARK_ADMIN_BOT_TOKEN", os.environ.get("POLYSHARK_BOT_TOKEN", "8534952394:AAEwqEuXKKArRj9e_VTjc_rgKqr2yPniI0k"))
 # Legacy sender disabled: direct broadcast channel routing is no longer used here
-CHANNEL_ID = os.environ.get("POLYSHARK_LEGACY_CHANNEL", "")
+CHANNEL_ID = os.environ.get("POLYSHARK_LEGACY_CHANNEL", "-1003786930778")
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else ""
 
 
+def _telegram_post(method: str, payload: dict, files=None) -> dict:
+    import requests
+    if not BOT_TOKEN:
+        return {"ok": False, "description": "missing BOT_TOKEN"}
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+    try:
+        if files:
+            r = requests.post(url, data=payload, files=files, timeout=20)
+        else:
+            r = requests.post(url, json=payload, timeout=20)
+        return r.json()
+    except Exception as e:
+        return {"ok": False, "description": str(e)}
+
+
 def send_text(message: str, parse_mode: str = "Markdown") -> dict:
-    """Legacy sender disabled. Use the updated router/relay path instead."""
-    return {"ok": False, "description": "legacy sender disabled"}
+    return _telegram_post('sendMessage', {'chat_id': CHANNEL_ID or '', 'text': message, 'parse_mode': parse_mode, 'disable_web_page_preview': True})
 
 
 def send_photo(photo_path: str, caption: str = None, parse_mode: str = "Markdown") -> dict:
@@ -49,6 +64,10 @@ def send_photo(photo_path: str, caption: str = None, parse_mode: str = "Markdown
     return response.json()
     """Legacy sender disabled. Use the updated router/relay path instead."""
     return {"ok": False, "description": "legacy sender disabled"}
+    if not os.path.exists(photo_path):
+        return {"ok": False, "description": f"missing file: {photo_path}"}
+    with open(photo_path, 'rb') as f:
+        return _telegram_post('sendPhoto', {'chat_id': CHANNEL_ID or '', 'caption': caption or '', 'parse_mode': parse_mode}, files={'photo': f})
 
 
 def send_alert_card(
@@ -77,16 +96,7 @@ def send_alert_card(
         Telegram API response dict
     """
     # Build caption with signal info
-    caption = f"""🐋 *POLYSHARK WHALE ALERT*
-━━━━━━━━━━━━━━━━━━
-📊 *{market_question[:60]}...*
-━━━━━━━━━━━━━━━━━━
-[{trade_type}] ${trade_price:.2f} → Position: ${position_size:,.0f}
-━━━━━━━━━━━━━━━━━━
-👤 {trader_name} | {trader_wallet}
-📈 All-Time P&L: ${pnl_all_time:,.0f} ({win_rate:.1f}% WR)
-📉 30D ROI: {roi_30d:+.1f}%"""
-    
+        
     if streak_count > 0:
         caption += f"\n🔥 {streak_count} CORRECT IN A ROW"
     
@@ -104,7 +114,6 @@ def send_alert_card(
     if os.path.exists(image_path):
         result = send_photo(image_path, caption)
     else:
-        # Fallback to text-only
         result = send_text(caption)
     
     return result

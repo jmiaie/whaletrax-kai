@@ -57,6 +57,7 @@ if __name__ == '__main__':
     import sys
     token = '8741871021:AAFI3bRTTSurnjMgY32AAPSPtoozb1eji_g'
     token = '8741871021:AAFI3bRTTSurnjMgY32AAPSPtoozb1eji_g'
+    token = os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8534952394:AAEwqEuXKKArRj9e_VTjc_rgKqr2yPniI0k'))
     CHAT = -1003786930778
 
     import requests

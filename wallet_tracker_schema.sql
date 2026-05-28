@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS tracked_wallets (
     win_rate_pct   REAL DEFAULT 0,
     roi_pct        REAL DEFAULT 0,
     roi_30d        REAL DEFAULT 0,
+    pnl_30d        REAL DEFAULT 0,
     streak_current INTEGER DEFAULT 0,
     streak_best    INTEGER DEFAULT 0,
     last_trade_id  TEXT DEFAULT ''   -- hash of last trade to detect new trades
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS wallet_stats_history (
     win_rate_pct    REAL DEFAULT 0,
     roi_pct         REAL DEFAULT 0,
     roi_30d         REAL DEFAULT 0,
+    pnl_30d         REAL DEFAULT 0,
     streak_current  INTEGER DEFAULT 0,
     UNIQUE(wallet_address, snapshot_date)
 );

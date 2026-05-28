@@ -34,6 +34,7 @@ class WalletProfile:
         self._losses         = 0
         self._positions_30d  = 0
         self._wins_30d       = 0
+        self._pnl_30d        = 0.0
         self._positions_90d  = 0
         self._wins_90d       = 0
         self._positions_6m   = 0
@@ -112,6 +113,11 @@ class WalletProfile:
         return self._avg_roi
 
     @property
+    def pnl_30d(self) -> float:
+        self._recalc_if_needed()
+        return self._pnl_30d
+
+    @property
     def last_seen_ts(self) -> int:
         self._recalc_if_needed()
         return self._last_seen_ts
@@ -139,13 +145,39 @@ class WalletProfile:
             if key:
                 self._seen_ids.add(key)
 
-            pnl     = float(p.get('realizedPnl', 0) or 0)
-            roi_pct = float(p.get('roiPct', 0) or 0)
-            ts      = int(float(p.get('timestamp', 0) or 0))
-            sz      = float(p.get('size', 0) or 0)
+            pnl     = float(
+                p.get('realizedPnl')
+                or p.get('pnl')
+                or p.get('profit')
+                or p.get('profitAndLoss')
+                or 0
+            )
+            roi_pct = float(
+                p.get('roiPct')
+                or p.get('roi')
+                or 0
+            )
+            ts      = int(float(
+                p.get('timestamp')
+                or p.get('createdAt')
+                or p.get('closedAt')
+                or p.get('settledAt')
+                or 0
+            ))
+            sz      = float(
+                p.get('size')
+                or p.get('totalBought')
+                or p.get('amount')
+                or p.get('cost')
+                or 0
+            )
 
-            if not ts or not sz:
-                continue
+            if not ts:
+                ts = int(dt.datetime.now(dt.timezone.utc).timestamp())
+            if not sz:
+                sz = float(p.get('totalBought') or p.get('amount') or p.get('cost') or 0)
+            if not sz:
+                sz = 1.0
 
             self._pos_history.append({'pnl': pnl, 'roi_pct': roi_pct, 'ts': ts, 'sz': sz})
             self._last_seen_ts = max(self._last_seen_ts, ts)
@@ -171,6 +203,7 @@ class WalletProfile:
 
         self._positions_30d = sum(1 for p in self._pos_history if p['ts'] >= cutoff_30d)
         self._wins_30d      = sum(1 for p in self._pos_history if p['ts'] >= cutoff_30d and p['pnl'] > 0)
+        self._pnl_30d       = sum(p['pnl'] for p in self._pos_history if p['ts'] >= cutoff_30d)
 
         self._positions_90d = sum(1 for p in self._pos_history if p['ts'] >= cutoff_90d)
         self._wins_90d       = sum(1 for p in self._pos_history if p['ts'] >= cutoff_90d and p['pnl'] > 0)
@@ -208,6 +241,7 @@ class WalletProfile:
             'win_rate_30d': round(self.win_rate_30d, 1),
             'win_rate_90d': round(self.win_rate_90d, 1),
             'win_rate_6m': round(self.win_rate_6m, 1),
+            'pnl_30d': round(self.pnl_30d, 2),
             'current_streak': self._current_streak,
             'longest_streak': self._longest_streak,
             'total_pnl': round(self._total_pnl, 2),
@@ -225,23 +259,9 @@ class WalletProfile:
         p._pos_history = d.get('_pos_history', [])
         p._seen_ids    = set(d.get('_seen_ids', []))
         p.first_seen   = d.get('first_seen', '')
-        p.last_seen_ts = d.get('last_seen_ts', 0)
+        p._last_seen_ts = d.get('last_seen_ts', 0)
         p.updated_at   = d.get('updated_at', '')
-        # Pre-cache aggregates (don't recalculate until needed)
-        p._total_positions = d.get('total_positions', 0)
-        p._total_wins       = d.get('total_wins', 0)
-        p._losses           = d.get('losses', 0)
-        p._positions_30d    = d.get('positions_30d', 0)
-        p._wins_30d          = d.get('wins_30d', 0)
-        p._positions_90d    = d.get('positions_90d', 0)
-        p._wins_90d          = d.get('wins_90d', 0)
-        p._positions_6m     = d.get('positions_6m', 0)
-        p._wins_6m           = d.get('wins_6m', 0)
-        p._current_streak   = d.get('current_streak', 0)
-        p._longest_streak   = d.get('longest_streak', 0)
-        p._total_pnl         = d.get('total_pnl', 0.0)
-        p._avg_roi           = d.get('avg_roi', 0.0)
-        p._cache_valid       = True   # trust persisted aggregates
+        p._cache_valid       = False
         return p
 
 # ── Global profile cache ───────────────────────────────────────────────────

@@ -13,6 +13,7 @@ DB_PATH = '/home/ubuntu/.openclaw/workspace/ompa_vault/org/polyshark-alerts/poly
 # Token for @oc_a7bot (PolysharkBot) — active in Alert Group
 BOT_TOKEN = '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'
 BOT_TOKEN = os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAGSnKLtVG3W82CdJaixmyvU1TSgZzk786c')
+BOT_TOKEN = os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8534952394:AAEwqEuXKKArRj9e_VTjc_rgKqr2yPniI0k'))
 
 def mask_address(addr):
     if not addr: return '0x....'
@@ -102,18 +103,7 @@ def generate_closed_alert(position, wallet, stats, channel_override=None):
     )
     
     # Caption
-    caption = f"""🐋 *POLYSHARK — CLOSED TRADE*
-━━━━━━━━━━━━━━━━━━
-📊 {question[:80]}
-━━━━━━━━━━━━━━━━━━
-[{side}] ${price:.4f} → ${size_usdc:,.0f}
-📅 Opened: {open_str} | Closed: {close_str}
-🏁 Market Ended: {end_str}
-✅ Outcome: {outcome} {'(WINNER)' if is_winner else '(LOSER)'}
-━━━━━━━━━━━━━━━━━━
-👤 {mask_address(wallet)}
-📈 P&L: ${pnl:+,.2f} | WR: {stats['wr']:.1f}%"""
-
+    
     return img_path, caption, category
 
 # ── Scan Closed Positions ────────────────────────────────────────────────────

@@ -71,8 +71,8 @@ def get_stats(wallet_addr):
         FROM tracked_wallets WHERE wallet_address=?
     ''', (wallet_addr,)).fetchone()
     conn.close()
-    return {'pnl': row[0] or 0, 'wr': row[1] or 50,
-            'roi': row[2] or 0, 'roi30d': row[3] or 0} if row else {'pnl':0,'wr':50,'roi':0,'roi30d':0}
+    return {'pnl': row[0] if row and row[0] is not None else 0, 'wr': row[1] if row and row[1] is not None else None,
+            'roi': row[2] if row and row[2] is not None else 0, 'roi30d': row[3] if row and row[3] is not None else 0} if row else {'pnl':0,'wr':None,'roi':0,'roi30d':0}
 
 def is_new_position(conn, wallet_addr, market_id):
     return not conn.execute('''
@@ -163,8 +163,11 @@ if __name__ == '__main__':
         stats = get_stats(addr)
         # Enrich from seed
         seed_pnl = w.get('all_time_pnl') or w.get('total_pnl') or 0
-        if stats['pnl'] == 0 and seed_pnl: stats['pnl'] = seed_pnl
-        if stats['wr'] == 50: stats['wr'] = w.get('win_rate') or 50
+        seed_wr = w.get('win_rate')
+        if stats['pnl'] == 0 and seed_pnl:
+            stats['pnl'] = seed_pnl
+        if stats['wr'] in (None, 0, 50) and seed_wr is not None:
+            stats['wr'] = seed_wr
 
         conn.execute('INSERT OR IGNORE INTO tracked_wallets (wallet_address) VALUES (?)', (addr,))
         conn.commit()
@@ -242,20 +245,7 @@ if __name__ == '__main__':
                 amount_str = f"${amount:,.2f}" if amount > 0 else "$0"
 
                 # Caption format (Jeff spec)
-                caption = f"""🐋 *WHALE ENTRY ALERT*
-━━━━━━━━━━━━━━━━━━
-📊 {title[:90]}
-━━━━━━━━━━━━━━━━━━
-📌 {side.upper()} {outcome} @ {entry_str} → {amount_str}
-📅 Detected: {ts_str}{hours_str}
-📁 Category: {category.upper()}
-💰 Unrealized P&L: ${cp:+,.2f}
-━━━━━━━━━━━━━━━━━━
-👤 {short}
-🔗 {market_url(slug)}
-━━━━━━━━━━━━━━━━━━
-_Polyshark · Real-time whale tracking_"""
-
+                
                 # Generate card
                 img_path = f"/tmp/polyshark_alerts/entry_{addr[-8:]}_{market_id[-8:]}_{ts_now}.png"
                 try:

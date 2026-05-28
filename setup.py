@@ -1,0 +1,29 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="whaletrax",
+    version="0.1.0",
+    packages=find_packages(),
+    py_modules=[
+        "backfill_profiles",
+        "leaderboard_tracker",
+        "live_entry_tracker",
+        "live_scanner",
+        "polyshark_memory",
+        "polyshark_router",
+        "polyshark_sender",
+        "polyshark_subs",
+        "polyshark_webhook",
+        "rank_leaders",
+        "run_webhook_server",
+        "scan_closed",
+        "test_alerts",
+        "test_webhook",
+        "wallet_profiles",
+        "whale_tags",
+        "whaletrax_watcher",
+    ],
+    install_requires=[
+        "requests",
+    ],
+)

@@ -182,11 +182,44 @@ def _enrich_stats_from_closed_positions(stats: WalletStats, positions: list[dict
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+
+
+def _get_internal_whale_records(top_n: int | None = None) -> list[WalletStats]:
+    """Fallback leaderboard sourced from wallet_tracker.db internal_whale_wallets."""
+    import sqlite3
+    from pathlib import Path
+    db_path = Path(__file__).resolve().parents[1] / 'wallet_tracker.db'
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    q = 'SELECT wallet_address, display_name, lifetime_pnl, lifetime_wr, wr_30d, pnl_30d, total_trades, wins, losses, avg_roi, best_roi_trade, streak_current, streak_best, last_seen, updated_at, is_active FROM internal_whale_wallets ORDER BY lifetime_pnl DESC, lifetime_wr DESC, total_trades DESC'
+    if top_n:
+        q += f' LIMIT {int(top_n)}'
+    rows = conn.execute(q).fetchall()
+    conn.close()
+    out = []
+    for idx, r in enumerate(rows, start=1):
+        s = WalletStats(wallet=r['wallet_address'], display_name=r['display_name'] or '', total_profit_usdc=float(r['lifetime_pnl'] or 0), total_trades=int(r['total_trades'] or 0), rank=idx)
+        s.winning_trades = int(r['wins'] or 0)
+        s.losing_trades = int(r['losses'] or 0)
+        s.win_rate_pct = float(r['lifetime_wr'] or 0)
+        s.avg_roi_pct = float(r['avg_roi'] or 0)
+        s.biggest_win_usdc = float(r['best_roi_trade'] or 0)
+        s.big_win_count = 0
+        s.total_volume_usdc = float(r['pnl_30d'] or 0)
+        setattr(s, 'win_rate_30d', float(r['wr_30d'] or 0))
+        setattr(s, 'pnl_30d', float(r['pnl_30d'] or 0))
+        out.append(s)
+    return out
+
 def scan_leaderboard(top_n: int = config.LEADERBOARD_TOP_N) -> list[WalletStats]:
     """
     Fetch the Polymarket leaderboard and return a ranked list of WalletStats.
-    Each entry is enriched with the wallet's closed-positions if available.
+    Prefer internal leaderboard data when available; fall back to Polymarket public ranks.
     """
+    internal = _get_internal_whale_records(top_n=top_n)
+    if internal:
+        return internal
+
     raw_entries = pm.get_leaderboard(limit=top_n)
     if not raw_entries:
         logger.warning("Leaderboard returned no data.")
@@ -207,7 +240,7 @@ def scan_leaderboard(top_n: int = config.LEADERBOARD_TOP_N) -> list[WalletStats]
             rank=entry.rank,
         )
         if stats.total_volume_usdc > 0:
-            stats.win_rate_pct = 0.0  # leaderboard does not expose win rate directly
+            stats.win_rate_pct = 0.0
         results.append(stats)
 
     return results

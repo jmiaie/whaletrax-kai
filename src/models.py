@@ -189,6 +189,17 @@ class HoundResult:
     total_volume_usdc: float = 0.0
     total_trades: int = 0
     win_rate_pct: float = 0.0
+    # Leaderboard metrics
+    lifetime_pnl: float = 0.0
+    lifetime_wr: float = 0.0
+    wr_30d: float = 0.0
+    pnl_30d: float = 0.0
+    wins: int = 0
+    losses: int = 0
+    avg_roi: float = 0.0
+    best_roi_trade: float = 0.0
+    streak_current: int = 0
+    streak_best: int = 0
     # Big-winner metrics
     biggest_win_usdc: float = 0.0
     big_win_count: int = 0
@@ -212,3 +223,25 @@ class HoundResult:
             WalletTier.COMPOUNDER: "📈 Compounder",
         }
         return ", ".join(labels.get(t, t.value) for t in self.tiers) if self.tiers else "—"
+
+
+@dataclass
+class InternalWhaleRecord:
+    wallet: str
+    display_name: str = ""
+    lifetime_pnl: float = 0.0
+    lifetime_wr: float = 0.0
+    wr_30d: float = 0.0
+    pnl_30d: float = 0.0
+    total_trades: int = 0
+    wins: int = 0
+    losses: int = 0
+    avg_roi: float = 0.0
+    best_roi_trade: float = 0.0
+    streak_current: int = 0
+    streak_best: int = 0
+    last_seen: str = ""
+    updated_at: str = ""
+    is_active: int = 1
+    record_source: str = "wallet_tracker.db"
+    categories_json: str = "[]"

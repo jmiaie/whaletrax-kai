@@ -42,6 +42,7 @@ _cycle_rl_errors = 0
 
 TOKEN = '8741871021:AAGtWosFayhX82ls7W3ZNcNh5cIQcEbAEpM'
 TOKEN = os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'))
+TOKEN = os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8534952394:AAEwqEuXKKArRj9e_VTjc_rgKqr2yPniI0k'))
 
 CHANNELS = {
     'hub':      int(os.environ.get('CHANNEL_POLYSHARK_HUB',      '-1003786930778')),  # Polyshark Alert Group
@@ -293,278 +294,117 @@ def detect_categories(q):
     return cats if cats else ['pro']
 
 def format_card(bw, tier='PRO', channel_id=None):
-    """
-    v1.2 card format — Jeff Milam, Polyshark 2026-04-25
-
-    Emoji rules:
-      💵 = trade SIZE (not 💳)
-      🐋 = wallet address (not 👤)
-      ⛓️ = links (not 🧭)
-      🏅 = inline badge with question line (not separate)
-      🏆 🟢 = green badge WR ≥65%
-      🏆 🟠 = amber badge WR 45-64%
-      🏆 🔴 = red badge WR <40%
-      n=N = trade count
-      ✅ $X | ✅ +X% potential ROI = entry card
-      ✅ $X | ✅ +X% ROI = realized win/close
-      💰 $X | 💲 -X% ROI = loss + negative ROI both red
-
-    Reject rules:
-      Entry price $0.0000 → REJECT (return None)
-      Stock tickers (AMAZON, YELLEN, MSFT etc) → REJECT (return None)
-      Resolved markets older than 2025 → REJECT (return None)
-    """
     import datetime as dt
+    from wallet_profiles import get_profile
 
-    # ── REJECT: $0.0000 entry price ────────────────────────────────────────
-    entry_px = getattr(bw, 'avg_price', 0)
-    if entry_px == 0 or entry_px is None:
-        log.warning(f"REJECTED: $0.0000 entry price market {getattr(bw,'market_id','')}")
+    wallet = (getattr(bw, 'wallet', '') or '').lower()
+    prof = get_profile(wallet) if wallet else None
+
+    # Wallet age for new-wallet note
+    wallet_age_days = None
+    try:
+        if prof and getattr(prof, 'first_seen', None):
+            from datetime import datetime, timezone
+            fs = prof.first_seen
+            if isinstance(fs, str):
+                fs = datetime.fromisoformat(fs.replace('Z', '+00:00'))
+            if fs.tzinfo is None:
+                fs = fs.replace(tzinfo=timezone.utc)
+            wallet_age_days = max(0, (datetime.now(timezone.utc) - fs).days)
+    except Exception:
+        wallet_age_days = None
+
+    entry_px = getattr(bw, 'avg_price', 0) or 0
+    if entry_px == 0:
         return None
 
-    # ── REJECT: stock tickers ──────────────────────────────────────────────
-    q_lower = getattr(bw, 'market_question', '').lower()
-    STOCK_TICKERS = ['$amazon','$yellen','$msft','$aapl','$googl','$meta','$tsla',
-                     '$nvda','$amzn','$fb','$spam','$musk','$zuck','$spx','$spy']
-    for ticker in STOCK_TICKERS:
-        if ticker in q_lower:
-            log.warning(f"REJECTED: stock ticker in market: {getattr(bw,'market_id','')}")
-            return None
+    trade_size = float(getattr(bw, 'trade_size_usdc', 0) or 0)
+    profit_usdc = float(getattr(bw, 'profit_usdc', 0) or 0)
+    roi_pct = float(getattr(bw, 'roi_pct', 0) or 0)
+    is_open = bool(getattr(bw, 'is_open', True))
+    if is_open:
+        roi_pct = (1.0 / entry_px - 1) * 100
+        if trade_size > 0:
+            profit_usdc = (trade_size / entry_px) - trade_size
 
-    # ── REJECT: already-resolved markets ────────────────────────────────
-    end_date_str = getattr(bw, 'end_date', '') or ''
-    if end_date_str:
-        try:
-            from datetime import datetime, timezone
-            end_dt = datetime.fromisoformat(end_date_str.replace('Z', '+00:00')).replace(tzinfo=timezone.utc)
-            now = datetime.now(timezone.utc)
-            if end_dt < now:
-                log.warning(f"REJECTED: already-resolved market {getattr(bw,'market_id','')} ended {end_date_str[:10]}")
-                return None
-        except (ValueError, TypeError):
-            pass  # unparseable date, allow it
+    q = getattr(bw, 'market_question', '') or '?'
+    sport_emoji = '⚾' if any(k in q.lower() for k in ['athletics','yankees','mets','dodgers','rangers','red sox','cubs','mariners','padres','brewers','phillies','marlins','diamondbacks','giants','orioles','astros','guardians','twins','tigers','reds']) else ''
+    classification_badge = '💰 Six-Figure Profit' if profit_usdc >= 100000 else ('🐋 Whale Alert' if trade_size >= 100000 else '')
+    header = f'🟢 {classification_badge} [{tier.upper()}] 🏅' if classification_badge else f'🟢 [{tier.upper()}] 🏅'
+    market = f'🏅 {sport_emoji} {q}' if sport_emoji else f'🏅 {q}'
 
-    # ── REJECT: future opened date (bad data — opened ts is in the future) ─
-    ts_opened = getattr(bw, 'timestamp', None)
-    if ts_opened:
-        try:
-            from datetime import datetime, timezone as tz
-            opened_dt = datetime.fromtimestamp(ts_opened, tz=tz.utc)
-            if opened_dt > datetime.now(tz.utc):
-                log.warning(f"REJECTED: future opened date {getattr(bw,'market_id','')} ts={ts_opened} ({opened_dt.date()})")
-                return None
-        except (ValueError, TypeError, OSError):
-            pass
-
-    # ── Build card ───────────────────────────────────────────────────────────
-    free_card = (tier == 'free')
-    label     = 'FREE TEASER' if free_card else tier.upper()
-
-    # Determine WIN (resolved) vs ENTRY (open/unresolved market)
-    end_str = getattr(bw, 'end_date', '') or ''
-    is_open = True
-    if end_str:
-        try:
-            from datetime import datetime, timezone as tz
-            end_dt = datetime.fromisoformat(end_str.replace('Z', '+00:00')).replace(tzinfo=tz.utc)
-            is_open = end_dt > datetime.now(tz.utc)
-        except:
-            pass
-    alert_type = 'WHALE ENTRY' if is_open else 'WHALE WIN'
-
-    # Sport emoji detection
-    q_lower = getattr(bw, 'market_question', '').lower()
-    sport_emoji = ''
-    if any(k in q_lower for k in ['mets','yankees','dodgers','athletics','rangers','red sox','cubs','sox','mariners','padres',' Rockies','brewers','phillies','marlins','diamondbacks','giants','nationals','orioles','astros','guardians','twins','tigers','reds']):
-        sport_emoji = '⚾'
-    elif any(k in q_lower for k in ['lakers','celtics','warriors','nba','basketball','knicks','hawks','spurs','bulls','heat','suns','bucks','76ers']):
-        sport_emoji = '🏀'
-    elif any(k in q_lower for k in ['nfl','bengals','ravens','cowboys','eagles','chiefs','packers','bills','patriots','nfl','football','super bowl']):
-        sport_emoji = '🏈'
-    elif any(k in q_lower for k in ['hockey','rangers','bruins','flyers','penguins','devils','avalanche','golden knights','kraken','jets','flyers','wings']):
-        sport_emoji = '🏒'
-    elif any(k in q_lower for k in ['ufc','mma','boxing','fight','spann','griffin','suarez','barcelos']):
-        sport_emoji = '🥊'
-    elif any(k in q_lower for k in ['tennis','wimbledon','us open','madrid open','australian open','serena','nadal','alcaraz']):
-        sport_emoji = '🎾'
-    elif any(k in q_lower for k in ['golf','masters','pga','Tiger Woods']):
-        sport_emoji = '⛳'
-    elif any(k in q_lower for k in ['soccer','fc','Real Madrid','Barcelona','Manchester','liverpool','chelsea','arsenal','leicester']):
-        sport_emoji = '⚽'
-    elif any(k in q_lower for k in ['ipl','cricket','delhi capitals','sunrisers','lucknow super','mumbai indians']):
-        sport_emoji = '🏏'
-
-    # Classification badge
-    profit_val = getattr(bw, 'profit_usdc', 0) or 0
-    roi_val    = getattr(bw, 'roi_pct', 0) or 0
-    wr_val     = getattr(bw, 'win_rate', 0) or 0
-    streak_val = getattr(bw, 'win_streak', 0) or 0
-    size_val   = getattr(bw, 'trade_size_usdc', 0) or 0
-
-    classification_badge = ''
-    if wr_val >= 65 and streak_val >= 3: classification_badge = '⚡ Elite Pick'
-    elif streak_val >= 5:               classification_badge = '🔥 Hot Streak!'
-    elif wr_val >= 65:                  classification_badge = '🏆 High Win-Rate'
-    elif profit_val >= 100000:          classification_badge = '💰 Six-Figure Profit'
-    elif size_val >= 100000:            classification_badge = '🐋 Whale Alert'
-
-    # Sport emoji detection
-    q_lower = getattr(bw, 'market_question', '').lower()  # for sport emoji detection
-    sport_emoji = ''
-    if any(k in q_lower for k in ['mets','yankees','dodgers','athletics','rangers','red sox','cubs','sox','mariners','padres',' Rockies','brewers','phillies','marlins','diamondbacks','giants','nationals','orioles','astros','guardians','twins','tigers','reds']):
-        sport_emoji = '⚾'
-    elif any(k in q_lower for k in ['lakers','celtics','warriors','nba','basketball','knicks','hawks','spurs','bulls','heat','suns','bucks','76ers']):
-        sport_emoji = '🏀'
-    elif any(k in q_lower for k in ['nfl','football','super bowl','cowboys','eagles','chiefs','packers','bills','patriots','bengals','ravens']):
-        sport_emoji = '🏈'
-    elif any(k in q_lower for k in ['hockey','rangers','bruins','flyers','penguins','devils','avalanche','golden knights','kraken','jets','flyers','wings','predators','sabres']):
-        sport_emoji = '🏒'
-    elif any(k in q_lower for k in ['ufc','mma','boxing','fight','spann','griffin','suarez','barcelos']):
-        sport_emoji = '🥊'
-    elif any(k in q_lower for k in ['tennis','wimbledon','us open','madrid open','australian open','serena','nadal','alcaraz']):
-        sport_emoji = '🎾'
-    elif any(k in q_lower for k in ['golf','masters','pga','Tiger Woods']):
-        sport_emoji = '⛳'
-    elif any(k in q_lower for k in ['soccer','fc','Real Madrid','Barcelona','Manchester','liverpool','chelsea','arsenal','leicester',' IPL','cricket','delhi capitals','sunrisers']):
-        sport_emoji = '⚽'
-    elif any(k in q_lower for k in ['ipl','cricket','sunrisers hyderabad','lucknow super giants','mumbai indians']):
-        sport_emoji = '🏏'
-
-    # Header with 🏅 inline
-    header = f'<b>🟢 {classification_badge} [{label}] 🏅</b>' if classification_badge else f'<b>🟢 {alert_type} [{label}] 🏅</b>'
-
-    # Market question — truncate at 72 chars, prepend sport emoji
-    q = getattr(bw, 'market_question', '?')[:72]
-    market = f'<b>🏅 {sport_emoji} {q}</b>' if sport_emoji else f'<b>🏅 {q}</b>'
-
-    # Direction + explicit play target (v2.1)
-    q = getattr(bw, 'market_question', '') or ''
-    q_main = q.replace('🏅', '').strip()
-    if ' vs. ' in q_main:
-        left, right = q_main.split(' vs. ', 1)
-    elif ' vs ' in q_main:
-        left, right = q_main.split(' vs ', 1)
+    # BET line must reference the trader's selected outcome plus team/location if available.
+    side_raw = str(getattr(bw, 'outcome', '') or '').upper()
+    side = 'YES' if side_raw not in ('DOWN','NO') else 'NO'
+    team = (
+        getattr(bw, 'team_name', '') or
+        getattr(bw, 'team', '') or
+        getattr(bw, 'team_city', '') or
+        getattr(bw, 'team_location', '') or
+        getattr(bw, 'selection_name', '') or
+        getattr(bw, 'outcome_name', '') or
+        getattr(bw, 'selected_outcome', '') or
+        getattr(bw, 'picked_outcome', '') or
+        ''
+    )
+    if team:
+        if side == 'NO' and team.strip().lower() in ('yes', 'no'):
+            bet = f'🎯 ⬇️ BET on NO'
+        else:
+            bet = f'🎯 ⬆️ BET {side} on {team}' if side == 'YES' else f'🎯 ⬇️ BET {side} on {team}'
     else:
-        left, right = q_main, ''
-    left_t  = left.strip(' -–—:').strip()
-    right_t = right.strip(' -–—:').strip()
-    yes_target = f'{left_t} WIN' if left_t else 'THE LEFT SIDE WIN'
-    no_target  = f'{right_t} WIN' if right_t else 'THE RIGHT SIDE WIN'
-    direction = getattr(bw, 'outcome', '') or ''
-    if direction.upper().startswith(('DOWN', 'NO')):
-        bet = f'<b>🎯 ⬇️ BET NO — {no_target}</b>'
-    else:
-        bet = f'<b>🎯 ⬆️ BET YES — {yes_target}</b>'
+        bet = f'🎯 ⬆️ BET {side}' if side == 'YES' else f'🎯 ⬇️ BET {side}'
 
-    # ── Profit / ROI — both green or both red ────────────────────────────
-    profit_usdc = getattr(bw, 'profit_usdc', 0) or 0
-    roi_pct     = getattr(bw, 'roi_pct', 0) or 0
-    if profit_usdc >= 0:
-        roi_label = 'potential ROI' if getattr(bw, 'is_open', True) else 'ROI'
-        profit = f'✅ <b>${profit_usdc:,.0f}</b> | <b>✅ +{roi_pct:.0f}% {roi_label}</b>'
-    else:
-        profit = f'💰 <b>${profit_usdc:,.0f}</b> | <b>💲 {roi_pct:.0f}% ROI</b>'
+    size_line = f'💵 ${trade_size:,.0f} position | Entry: {entry_px*100:.1f}¢'
+    roi_label = 'potential ROI' if is_open else 'ROI'
+    profit = f'✅ {profit_usdc:+,.0f}$ | ✅ {roi_pct:+.2f}% {roi_label}' if profit_usdc >= 0 else f'💰 {profit_usdc:+,.0f}$ | 💲 {roi_pct:.2f}% {roi_label}'
 
-    # ── Trade SIZE (💵 not 💳) and entry price ─────────────────────────────
-    size = getattr(bw, 'trade_size_usdc', 0) or 0
-    pct_px = f'{entry_px*100:.1f}¢'
-    size_line = f'💵 ${size:,.0f} position | Entry: {pct_px}'
+    # Use profile values for recent/lifetime stats; never derive from ROI or profit line.
+    wr_lt = float(getattr(bw, 'win_rate', None) or (prof.win_rate if prof else 0) or 0)
+    wr_30 = float(getattr(bw, 'win_rate_30d', None) or (prof.win_rate_30d if prof else 0) or 0)
+    pnl_lt = float(getattr(bw, 'total_pnl', None) or (prof.total_pnl if prof else 0) or 0)
+    pnl_30 = float(getattr(bw, 'pnl_30d', None) or (prof.pnl_30d if prof else 0) or 0)
+    trades_n = int(getattr(bw, 'total_positions', None) or (prof.total_positions if prof else 0) or 0)
 
-    # ── Win rates with color badges ─────────────────────────────────────────
-    n_trades = getattr(bw, 'total_positions', 0) or 0
-    wr_lt    = getattr(bw, 'win_rate', 0) or 0
-    wr_30    = getattr(bw, 'win_rate_30d', 0) or 0
+    def fmt_wr(v):
+        return f'{int(round(v))}%' if v and v > 0 else '--'
+    def fmt_pnl(v):
+        return '$-' if v == 0 else f'{v:+,.0f}$'
 
-    def wr_badge(wr_val):
-        if wr_val >= 65:  return '🏆 🟢', f'{wr_val:.0f}%'
-        if wr_val >= 45:  return '🏆 🟠', f'{wr_val:.0f}%~'
-        if wr_val > 0:    return '🏆 🔴', f'{wr_val:.0f}-%'
-        return '', ''
+    recent_line = f'🏅 Recent: {fmt_wr(wr_30)} WR | 💰 {fmt_pnl(pnl_30)} P/L'
+    lifetime_line = f'🏆 Lifetime: {fmt_wr(wr_lt)} WR | 💵 {fmt_pnl(pnl_lt)} P/L'
+    new_wallet_line = '🆕 New wallet: less than a month of experience' if (wallet_age_days is not None and wallet_age_days <= 30) else ''
+    conf = f'[Confidence: {int(getattr(bw, "confidence", 43) or 43)}%]'
 
-    lt_badge, lt_str = wr_badge(wr_lt)
-    wr30_badge, wr30_str = wr_badge(wr_30)
+    abbrev = f'{wallet[:6]}...{wallet[-5:]}' if wallet else '0x—'
+    trader_link = f'[{abbrev}](https://polymarket.com/profile/{wallet})' if wallet else '0x—'
+    trader = f'🐋 {trader_link} 🌊'
 
-    # Compute confidence score (0-100)
-    profit_val = getattr(bw, 'profit_usdc', 0) or 0
-    roi_val    = getattr(bw, 'roi_pct', 0) or 0
-    wr_val     = getattr(bw, 'win_rate', 0) or 0
-    streak_val = getattr(bw, 'win_streak', 0) or 0
-    size_val   = getattr(bw, 'trade_size_usdc', 0) or 0
+    end_date = getattr(bw, 'end_date', '') or ''
+    trade_ts = int(getattr(bw, 'timestamp', 0) or 0)
+    trade_date = dt.datetime.fromtimestamp(trade_ts, tz=dt.timezone.utc).strftime('%Y-%m-%d') if trade_ts else '—'
+    dates = f'📅 O: {trade_date} | C: {end_date[:10] if end_date else "—"}'
 
-    score  = min(100, int(
-        (20 if profit_val >= 50000 else 10 if profit_val >= 10000 else 5) +
-        (20 if roi_val >= 100 else 15 if roi_val >= 50 else 8) +
-        (20 if wr_val >= 65 else 10 if wr_val >= 45 else 3) +
-        (15 if streak_val >= 5 else 8 if streak_val >= 3 else 0) +
-        (15 if size_val >= 50000 else 10 if size_val >= 10000 else 0)
-    ))
-    conf_lbl = f'[Confidence: {score}%]'
-
-    roi_lt = getattr(bw, 'roi_pct', 0) or 0
-    roi_lbl = f'✅ ${abs(roi_lt):,.0f} P/L' if roi_lt >= 0 else f'💲 ${abs(roi_lt):,.0f} P/L'
-    wr_parts = []
-    if wr_lt > 0:
-        wr_parts.append(f'{lt_badge} {lt_str} Wallet WR')
-    else:
-        wr_parts.append('🏆 -- Wallet WR')
-    if wr_30 > 0:
-        wr_parts.append(f'{wr30_badge} {wr30_str} 30D WR')
-    else:
-        wr_parts.append('🏆 -- 30D WR')
-    if n_trades > 0:
-        wr_parts.append(f'n={n_trades}')
-    wr = ' | '.join(wr_parts)
-    wr2_parts = [conf_lbl, roi_lbl]
-    wr2 = ' | '.join(wr2_parts)
-
-    # ── Streak ───────────────────────────────────────────────────────────────
-    streak = getattr(bw, 'win_streak', 0) or 0
-    if streak >= 8:
-        streak_badge = '🔥🔥 ON FIRE 🔥🔥'
-    elif streak >= 5:
-        streak_badge = f'🔥 {streak}-win streak'
-    else:
-        streak_badge = ''
-
-    # ── Wallet label (🐋 not 👤) ────────────────────────────────────────────
-    def _ellipsize_wallet(addr: str) -> str:
-        if not addr:
-            return '0x....'
-        if len(addr) <= 12:
-            return addr
-        return f'{addr[:6]}...{addr[-5:]}'
-
-    trader_wallet = _ellipsize_wallet(getattr(bw, 'wallet', ''))
-    wallet_url = f'https://polymarket.com/@{getattr(bw, "wallet", "").lower()}' if getattr(bw, 'wallet', '') else ''
-    trader = f'🐋 [{trader_wallet}]({wallet_url}) 🌊' if wallet_url else f'🐋 {trader_wallet} 🌊'
-
-    # No separate visible URL line; the wallet text itself carries the hyperlink.
-    link = ''
-
-    # ── Dates + wallet % of leaderboard ─────────────────────────────────────
-    trade_ts   = getattr(bw, 'timestamp', None)
-    trade_date = dt.datetime.fromtimestamp(trade_ts, tz=dt.timezone.utc).strftime('%b-%d-%y') if trade_ts else '?'
-    end_date   = dt.datetime.fromisoformat(end_date_str.replace('Z', '+00:00')).strftime('%b-%d-%y') if end_date_str else '?'
-    vol        = getattr(bw, 'leaderboard_volume', 0) or 0
-    wallet_pct = f' ({size / vol * 100:.1f}% of wallet)' if vol and vol > 0 else ''
-    dates      = f'📅 O: {trade_date} | Closing: {end_date}{wallet_pct}' if is_open else f'📅 O: {trade_date} | Resolved: {end_date}{wallet_pct}'
-
-    # ── Assemble ─────────────────────────────────────────────────────────────
-    sep = '————————————————————————'
-    if free_card:
-        lines = [header, sep, market, sep, profit, size_line, '', bet, dates, sep]
-    else:
-        lines = [header, sep, market, sep, profit, size_line, '', bet, dates]
-        if wr:           lines.append(wr)
-        if wr2:          lines.append(wr2)
-        if streak_badge: lines.append(streak_badge)
-        lines += [sep, trader]
-    return '\n'.join(str(x) for x in lines)
-
-
-
-
-
+    lines = [header]
+    if new_wallet_line:
+        lines.append(new_wallet_line)
+    lines += [
+        '————————————————————————',
+        market,
+        '————————————————————————',
+        profit,
+        size_line,
+        '',
+        bet,
+        dates,
+        recent_line,
+        lifetime_line,
+        '',
+        conf,
+        '————————————————————————',
+        trader,
+    ]
+    return '\n'.join(lines)
 def process_queue(state):
     """Fire category forwards (7 min) and free forwards (6 hr)."""
     queue = load_queue()

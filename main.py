@@ -88,9 +88,7 @@ def scan_leaderboard_cmd(top: int, big_wins: bool) -> None:
 
         if big_wins:
             progress.update(task, description="Scanning big wins …")
-            raw_entries = pm.get_leaderboard(limit=top)
-            from src.parsers import parse_leaderboard_entry
-            for idx, (wallet_stats, raw) in enumerate(zip(wallets, raw_entries), start=1):
+            for wallet_stats in wallets:
                 entry_wins = bwd.scan_big_wins_for_wallet(
                     wallet_stats.wallet, wallet_stats.display_name
                 )
@@ -243,6 +241,67 @@ def scan_market_cmd(market_id: str, top_holders: int, big_wins: bool) -> None:
             market_big_wins,
             title=f"💰  Big Wins — {question or market_id}",
         )
+
+
+@cli.command("backfill-wallet-profiles")
+@click.option(
+    "--top",
+    default=config.LEADERBOARD_TOP_N,
+    show_default=True,
+    help="Number of top leaderboard wallets to backfill.",
+    type=click.IntRange(1, 100),
+)
+def backfill_wallet_profiles_cmd(top: int) -> None:
+    """Backfill wallet profiles from closed Polymarket positions and persist the profile vault."""
+    from wallet_profiles import update_profile
+
+    raw_entries = pm.get_leaderboard(limit=top)
+    if not raw_entries:
+        print_warning("Leaderboard returned no data.")
+        sys.exit(1)
+
+    total_wallets = 0
+    total_closed = 0
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Backfilling top-{top} wallets …", total=None)
+        from src.parsers import parse_leaderboard_entry
+        for idx, raw in enumerate(raw_entries[:top], start=1):
+            entry = parse_leaderboard_entry(raw, rank=idx)
+            if not entry.proxy_wallet:
+                continue
+            progress.update(task, description=f"Backfilling {entry.proxy_wallet[:14]}…")
+            closed = pm.get_user_closed_positions(entry.proxy_wallet)
+            if not closed:
+                continue
+            update_profile(entry.proxy_wallet, entry.name, closed)
+            total_wallets += 1
+            total_closed += len(closed)
+
+    print_info(f"Backfill complete: {total_wallets} wallet(s), {total_closed} closed position(s) ingested.")
+
+
+@cli.command("backfill-status")
+def backfill_status_cmd() -> None:
+    """Show resumable backfill progress for the wallet profile batches."""
+    import json
+    from pathlib import Path
+
+    progress_file = Path('/tmp/whaletrax_backfill_progress.json')
+    if not progress_file.exists():
+        print_info("No backfill progress file found yet.")
+        return
+
+    data = json.loads(progress_file.read_text())
+    print_info(
+        f"Backfill status: {data.get('status', 'unknown')} | "
+        f"start={data.get('start')} | count={data.get('count')} | "
+        f"updated={data.get('updated_wallets', 0)} | closed={data.get('closed_positions', 0)}"
+    )
 
 
 # ── WalletHound commands ──────────────────────────────────────────────────────

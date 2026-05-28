@@ -26,6 +26,62 @@ def _sport_emoji(q: str) -> str:
     if any(k in q for k in ['soccer','fc','real madrid','barcelona','manchester','liverpool','chelsea','arsenal','leicester',' IPL','cricket','delhi capitals','sunrisers']): return '⚽'
     if any(k in q for k in ['ipl','cricket','sunrisers hyderabad','lucknow super giants','mumbai indians']): return '🏏'
     return ''
+
+
+def _abbrev_wallet(wallet: str) -> str:
+    wallet = wallet.strip()
+    if len(wallet) <= 12:
+        return wallet
+    return f"{wallet[:8]}...{wallet[-6:]}"
+
+
+def _wrap_text(draw, text, font, max_width):
+    words = text.split()
+    lines, line = [], []
+    for w in words:
+        test = ' '.join(line + [w])
+        if draw.textlength(test, font=font) <= max_width:
+            line.append(w)
+        else:
+            if line:
+                lines.append(' '.join(line))
+                line = [w]
+            else:
+                lines.append(w)
+    if line:
+        lines.append(' '.join(line))
+    return lines
+
+
+def _wallet_link_text(wallet: str) -> str:
+    return _abbrev_wallet(wallet)
+
+
+def _potential_roi_usd(size_usdc: float, roi_pct: float) -> float:
+    return round(size_usdc * abs(roi_pct) / 100, 2)
+
+
+def _format_wallet_line(wallet: str, confidence: str, roi_30d: float = 0.0, lifetime_roi: float = 0.0, lifetime_wr: float = 0.0, trades_n: int = 0) -> str:
+    abbrev = _abbrev_wallet(wallet)
+    extras = []
+    if roi_30d != 0:
+        extras.append(f"30D ROI: {roi_30d:+.1f}%")
+    if lifetime_roi != 0:
+        extras.append(f"Lifetime ROI: {lifetime_roi:+.1f}%")
+    if lifetime_wr != 0:
+        extras.append(f"Lifetime WR: {lifetime_wr:.0f}%")
+    if trades_n > 0:
+        extras.append(f"Trades: {trades_n}")
+    extra_text = ' | '.join(extras)
+    tail = f" | {extra_text}" if extra_text else ''
+    return f"🐋 {abbrev} | [Confidence: {confidence}]{tail}"
+
+
+def _trade_summary_line(side: str, price: float, size_usdc: float, roi_pct: float = 0.0, roi_usd: float = 0.0) -> str:
+    side_label = side.upper()
+    roi_part = f" | Potential ROI: {roi_pct:+.1f}%" if roi_pct else ''
+    usd_part = f" | ${roi_usd:,.0f}" if roi_usd else ''
+    return f"💵 BET: {side_label} on - | Entry: ${price:.2f} | Position: ${size_usdc:,.0f}{roi_part}{usd_part}"
 import os
 from datetime import datetime
 import math
@@ -66,10 +122,19 @@ PAD      = 30
 def divider(draw, y):
     draw.rectangle([PAD, y, WIDTH - PAD, y + 1], fill=DIVIDER)
 
-def fmt_ts(ts):
+def fmt_ts(ts, include_time=False):
     if not ts: return 'LIVE'
     try:
-        return datetime.fromtimestamp(ts, tz=None).strftime('%b %d')
+        # If ts is a string like "2025-11-15T00:00:00Z", parse it
+        if isinstance(ts, str):
+            if 'T' in ts:
+                ts = ts.split('T')[0]
+            return ts
+        
+        dt = datetime.fromtimestamp(ts, tz=None)
+        if include_time:
+            return dt.strftime('%Y-%m-%d, %H:%M UTC')
+        return dt.strftime('%Y-%m-%d')
     except:
         return 'LIVE'
 
@@ -184,16 +249,18 @@ def generate_card(
     # ── STATS ROW ───────────────────────────────────────────────────────────
     divider(draw, y); y += 14
 
-    draw.text((PAD, y), f'💵 ${abs(profit):,.0f}', font=f32, fill=GREEN)
+    draw.text((PAD, y), f'💰 ${profit:,.0f} | {"💲" if roi < 0 else "✅"} {roi:+.0f}% ROI', font=f24, fill=GREEN if profit >= 0 else RED)
 
-    roi_str = f'✅ +{roi:.0f}% ROI' if roi >= 0 else f'✅ {roi:.0f}% ROI'
-    roi_col = GREEN if roi >= 0 else RED
-    draw.text((PAD + 250, y + 6), roi_str, font=f24, fill=roi_col)
-
-    size_str = f'💳 ${size_usdc:,.0f}' if size_usdc < 1_000_000 else f'💳 ${size_usdc/1_000_000:.1f}M'
+    size_str = f'💵 Size: ${size_usdc:,.0f}' if size_usdc < 1_000_000 else f'💵 Size: ${size_usdc/1_000_000:.1f}M'
     sw = draw.textlength(size_str, font=f24)
     draw.text((WIDTH - PAD - sw, y), size_str, font=f24, fill=WHITE)
     y += 44
+
+    potential_roi_pct = roi_30d if roi_30d != 0 else (roi if abs(roi) <= 100 else 0.0)
+    potential_roi_usd = _potential_roi_usd(size_usdc, potential_roi_pct)
+    entry_label = f'📊 Entry: ${profit if profit > 0 else 0.00:.2f} | Potential ROI: {potential_roi_pct:+.1f}% | ${potential_roi_usd:,.0f}'
+    draw.text((PAD, y), entry_label, font=f16, fill=MUTED)
+    y += 30
 
     # ── WIN RATE + LIFETIME ─────────────────────────────────────────────────
     divider(draw, y); y += 14
@@ -239,19 +306,30 @@ def generate_card(
     # ── DATES ──────────────────────────────────────────────────────────────
     divider(draw, y); y += 14
     parts = []
-    if ts_opened:   parts.append(f'Opened: {fmt_ts(ts_opened)}')
-    if ts_closes:   parts.append(f'Closes: {fmt_ts(ts_closes)}')
-    if ts_resolved: parts.append(f'Resolved: {fmt_ts(ts_resolved)}')
-    draw.text((PAD, y), '  |  '.join(parts), font=f16, fill=MUTED)
-    y += 30
+    if ts_opened:
+        parts.append(f'O: {fmt_ts(ts_opened, include_time=True)}')
+    if ts_closes:
+        label = 'Closes' if is_open else 'Closed'
+        parts.append(f'{label}: {fmt_ts(ts_closes)}')
+    if ts_resolved:
+        parts.append(f'C: {fmt_ts(ts_resolved)}')
+    if parts:
+        draw.text((PAD, y), '  |  '.join(parts), font=f16, fill=MUTED)
+        y += 30
+    else:
+        draw.text((PAD, y), 'O: —', font=f16, fill=MUTED)
+        y += 30
 
     # ── LINKS ───────────────────────────────────────────────────────────────
     # URLs omitted — Polymarket restricts crypto/specialty markets globally
+    draw.text((PAD, y), _format_wallet_line(masked_wallet, confidence, roi_30d=roi_30d, lifetime_roi=lifetime_roi, lifetime_wr=lifetime_wr, trades_n=trades_n), font=f16, fill=TEAL)
+
+    y += 30
 
     # ── FOOTER ──────────────────────────────────────────────────────────────
     footer_y = y + 28
     draw.text((PAD, footer_y + 4), 'Polyshark · Whaletrax', font=f14, fill=(50, 55, 80))
-    draw.text((WIDTH - PAD - 180, footer_y + 4), '🔒 Identity anonymized', font=f14, fill=(50, 55, 80))
+    draw.text((WIDTH - PAD - 180, footer_y + 4), '🔒 Identity anonymized 🌊', font=f14, fill=(50, 55, 80))
 
     img.save(img_path, 'PNG')
     print(f'Card saved → {img_path}')
@@ -340,9 +418,9 @@ def generate_loss_card(
     # ── STATS ROW ───────────────────────────────────────────────────────────
     divider(draw, y); y += 14
 
-    draw.text((PAD, y), f'🚫 -${abs(loss):,.0f}', font=f32, fill=RED)
+    draw.text((PAD, y), f'🚫 {loss:+,.0f}$', font=f32, fill=RED)
 
-    roi_str = f'💲 {roi:.0f}% ROI'
+    roi_str = f'💲 {roi:.2f}% ROI'
     draw.text((PAD + 250, y + 6), roi_str, font=f24, fill=RED)
 
     size_str = f'💳 ${size_usdc:,.0f}' if size_usdc < 1_000_000 else f'💳 ${size_usdc/1_000_000:.1f}M'
@@ -391,19 +469,30 @@ def generate_loss_card(
     # ── DATES ──────────────────────────────────────────────────────────────
     divider(draw, y); y += 14
     parts = []
-    if ts_opened:   parts.append(f'Opened: {fmt_ts(ts_opened)}')
-    if ts_closes:   parts.append(f'Closes: {fmt_ts(ts_closes)}')
-    if ts_resolved: parts.append(f'Resolved: {fmt_ts(ts_resolved)}')
-    draw.text((PAD, y), '  |  '.join(parts), font=f16, fill=MUTED)
-    y += 30
+    if ts_opened:
+        parts.append(f'O: {fmt_ts(ts_opened, include_time=True)}')
+    if ts_closes:
+        label = 'Closes' if is_open else 'Closed'
+        parts.append(f'{label}: {fmt_ts(ts_closes)}')
+    if ts_resolved:
+        parts.append(f'C: {fmt_ts(ts_resolved)}')
+    if parts:
+        draw.text((PAD, y), '  |  '.join(parts), font=f16, fill=MUTED)
+        y += 30
+    else:
+        draw.text((PAD, y), 'O: —', font=f16, fill=MUTED)
+        y += 30
 
     # ── LINKS ───────────────────────────────────────────────────────────────
     # URLs omitted — Polymarket restricts crypto/specialty markets globally
+    draw.text((PAD, y), _format_wallet_line(masked_wallet, confidence, roi_30d=roi_30d, lifetime_roi=lifetime_roi, lifetime_wr=lifetime_wr, trades_n=trades_n), font=f16, fill=TEAL)
+
+    y += 30
 
     # ── FOOTER ──────────────────────────────────────────────────────────────
     footer_y = y + 28
     draw.text((PAD, footer_y + 4), 'Polyshark · Whaletrax', font=f14, fill=(50, 55, 80))
-    draw.text((WIDTH - PAD - 180, footer_y + 4), '🔒 Identity anonymized', font=f14, fill=(50, 55, 80))
+    draw.text((WIDTH - PAD - 180, footer_y + 4), '🔒 Identity anonymized 🌊', font=f14, fill=(50, 55, 80))
 
     img.save(img_path, 'PNG')
     print(f'Loss card saved → {img_path}')
@@ -485,12 +574,12 @@ def generate_free_teaser(
 
     if ts_opened:
         divider(draw, y); y += 14
-        draw.text((PAD, y), f'📅 Opened: {fmt_ts(ts_opened)}', font=f16, fill=MUTED)
+        draw.text((PAD, y), f'📅 O: {fmt_ts(ts_opened, include_time=True)}', font=f16, fill=MUTED)
         y += 30
 
     if ts_resolved:
         divider(draw, y); y += 14
-        draw.text((PAD, y), f'✅ Resolved: {fmt_ts(ts_resolved)}', font=f16, fill=MUTED)
+        draw.text((PAD, y), f'✅ C: {fmt_ts(ts_resolved)}', font=f16, fill=MUTED)
         y += 30
 
     # ── LINK ────────────────────────────────────────────────────────────────
@@ -520,6 +609,7 @@ def make_trade_alert_card(
     masked_wallet: str = '0x....abcd',
     trader_pnl: float = 0.0,
     trader_wr: float = 0.0,
+    trader_wr_30d: float = 0.0,
     trader_roi: float = 0.0,
     trader_roi_30d: float = 0.0,
     recent_roi: float = 0.0,
@@ -561,7 +651,6 @@ def make_trade_alert_card(
             confidence       = confidence,
             lifetime_roi     = trader_roi,
             roi_30d          = trader_roi_30d,
-            win_rate_30d      = 0,  # not available from trader_pnl path
             confidence_score = confidence_score,
             is_open          = is_open,
             img_path         = img_path,
