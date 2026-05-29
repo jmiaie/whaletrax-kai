@@ -58,7 +58,7 @@ MIN_PROFIT     = 500        # USD
 MIN_ROI        = 50         # percent
 MIN_SIZE       = 100         # USD cost basis
 
-TOKEN   = os.environ.get('WHALETRAX_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8534952394:AAEwqEuXKKArRj9e_VTjc_rgKqr2yPniI0k'))
+TOKEN = os.environ.get('WHALETRAX_BOT_TOKEN', os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '')))
 CHAT_ID = os.environ.get('WHALETRAX_CHAT_ID', os.environ.get('POLYSHARK_HUB_CHAT_ID', '-1003786930778'))
 
 # Logging

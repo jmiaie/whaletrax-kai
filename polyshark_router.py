@@ -41,8 +41,6 @@ _cycle_sends = 0
 _cycle_rl_errors = 0
 
 TOKEN = '8741871021:AAGtWosFayhX82ls7W3ZNcNh5cIQcEbAEpM'
-TOKEN = os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'))
-TOKEN = os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8534952394:AAEwqEuXKKArRj9e_VTjc_rgKqr2yPniI0k'))
 
 CHANNELS = {
     'hub':      int(os.environ.get('CHANNEL_POLYSHARK_HUB',      '-1003786930778')),  # Polyshark Alert Group

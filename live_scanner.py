@@ -24,7 +24,6 @@ DB_PATH = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
 BOT_TOKEN = os.environ.get('POLYSHARK_ADMIN_BOT_TOKEN', os.environ.get('POLYSHARK_BOT_TOKEN', '8534952394:AAEwqEuXKKArRj9e_VTjc_rgKqr2yPniI0k'))
 SCANNER_TEXT_ONLY = os.environ.get('POLYSHARK_SCANNER_TEXT_ONLY', '1').lower() not in ('0', 'false', 'no', 'off')
 DB_PATH = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
-BOT_TOKEN = os.environ.get('POLYSHARK_BOT_TOKEN', '8678199814:AAGSnKLtVG3W82CdJaixmyvU1TSgZzk786c')
 SCANNER_TEXT_ONLY = os.environ.get('POLYSHARK_SCANNER_TEXT_ONLY', '1').lower() not in ('0', 'false', 'no', 'off')
 
 # Channel IDs (set once known — placeholder for now)

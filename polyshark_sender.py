@@ -25,8 +25,6 @@ except ImportError:
 BOT_TOKEN = "8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg"
 # Channel ID for Polyshark broadcasts
 CHANNEL_ID = "-1003786930778"
-BOT_TOKEN = os.environ.get("POLYSHARK_BOT_TOKEN", "")
-BOT_TOKEN = os.environ.get("POLYSHARK_ADMIN_BOT_TOKEN", os.environ.get("POLYSHARK_BOT_TOKEN", "8534952394:AAEwqEuXKKArRj9e_VTjc_rgKqr2yPniI0k"))
 # Legacy sender disabled: direct broadcast channel routing is no longer used here
 CHANNEL_ID = os.environ.get("POLYSHARK_LEGACY_CHANNEL", "-1003786930778")
 
