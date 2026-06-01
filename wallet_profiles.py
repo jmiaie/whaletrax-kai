@@ -39,6 +39,7 @@ class WalletProfile:
         self._positions_30d  = 0
         self._wins_30d       = 0
         self._pnl_30d        = 0.0
+        self._pnl_30d_anchor = 0.0  # preserved across windows — never cleared by _recalculate
         self._positions_90d  = 0
         self._wins_90d       = 0
         self._positions_6m   = 0
@@ -208,7 +209,12 @@ class WalletProfile:
 
         self._positions_30d = sum(1 for p in self._pos_history if p['ts'] >= cutoff_30d)
         self._wins_30d      = sum(1 for p in self._pos_history if p['ts'] >= cutoff_30d and p['pnl'] > 0)
-        self._pnl_30d       = sum(p['pnl'] for p in self._pos_history if p['ts'] >= cutoff_30d)
+        raw_pnl_30d         = sum(p['pnl'] for p in self._pos_history if p['ts'] >= cutoff_30d)
+        if self._positions_30d > 0:
+            self._pnl_30d = raw_pnl_30d
+            self._pnl_30d_anchor = raw_pnl_30d  # anchor whenever window is live
+        elif self._total_positions > 0 and self._pnl_30d_anchor != 0:
+            self._pnl_30d = self._pnl_30d_anchor  # restore last known when window shifted past
 
         self._positions_90d = sum(1 for p in self._pos_history if p['ts'] >= cutoff_90d)
         self._wins_90d       = sum(1 for p in self._pos_history if p['ts'] >= cutoff_90d and p['pnl'] > 0)
@@ -247,6 +253,7 @@ class WalletProfile:
             'win_rate_90d': round(self.win_rate_90d, 1),
             'win_rate_6m': round(self.win_rate_6m, 1),
             'pnl_30d': round(self.pnl_30d, 2),
+            'pnl_30d_anchor': round(self._pnl_30d_anchor, 2),
             'current_streak': self._current_streak,
             'longest_streak': self._longest_streak,
             'total_pnl': round(self._total_pnl, 2),
@@ -266,7 +273,8 @@ class WalletProfile:
         p.first_seen   = d.get('first_seen', '')
         p._last_seen_ts = d.get('last_seen_ts', 0)
         p.updated_at   = d.get('updated_at', '')
-        p._cache_valid       = False
+        p._cache_valid        = False
+        p._pnl_30d_anchor     = d.get('pnl_30d_anchor', 0.0)
         return p
 
 # ── Global profile cache ───────────────────────────────────────────────────
@@ -365,6 +373,8 @@ def update_profile(wallet: str, name: str, positions: list[dict]):
     p.name = name or p.name
     p._last_api_fetch = time.time()  # stamp so min_fresh knows it's current
     p.merge_positions(positions)  # dedupes + full recalc
+    # Anchor pnl_30d after merge so it's preserved even when window shifts
+    p._pnl_30d_anchor = p._pnl_30d
     save_profiles(profiles)
     return p
 
