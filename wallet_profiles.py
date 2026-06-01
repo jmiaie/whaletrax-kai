@@ -6,9 +6,13 @@ All time-window win rates are RECALCULATED from _pos_history on every update.
 This ensures accurate windows (30d/90d/6m/lifetime) from day 1 of tracking,
 with no double-counting when a wallet is scanned multiple times.
 """
-import json, datetime as dt
+import json, datetime as dt, time, threading
 from pathlib import Path
 from typing import Optional
+from src import polymarket_client as pm
+PROFILE_STALE_TTL = 300  # 5 min — auto-refresh if older
+_refresh_locks: dict[str, threading.Lock] = {}
+_refresh_locks_lock = threading.Lock()
 
 PROFILE_FILE = Path('/tmp/wallet_profiles.json')
 VAULT_DIR    = Path('/home/ubuntu/.openclaw/workspace/ompa_vault/brain/polyshark/whales')
@@ -139,7 +143,8 @@ class WalletProfile:
 
         for p in positions:
             trade_id = p.get('id') or p.get('trade_id') or ''
-            key = trade_id or f"{p.get('timestamp','')}-{p.get('size','')}"
+            size_val = p.get('size') or p.get('totalBought') or p.get('amount') or p.get('cost') or ''
+            key = trade_id or f"{p.get('timestamp','')}-{size_val}"
             if key and key in self._seen_ids:
                 continue   # already have this position
             if key:
@@ -299,13 +304,53 @@ def save_profiles(profiles: dict[str, WalletProfile]):
     for wallet, p in profiles.items():
         _write_ompa_profile(p)
 
-def get_profile(wallet: str) -> WalletProfile:
-    """Get or create a wallet profile."""
+def get_profile(wallet: str, min_fresh: bool = False) -> WalletProfile:
+    """Get a wallet profile. Optionally auto-refresh from API if stale (>5 min).
+    
+    Use min_fresh=True when returning data to external consumers (cards, APIs).
+    Internal loops that push fresh positions should pass False (default).
+    """
     profiles = load_profiles()
     wallet = wallet.lower()
     if wallet not in profiles:
         profiles[wallet] = WalletProfile(wallet)
-    return profiles[wallet]
+    p = profiles[wallet]
+    p._recalculate()
+    if min_fresh:
+        _maybe_refresh(p)
+    return p
+
+def _maybe_refresh(p: WalletProfile):
+    """Refresh profile from Polymarket API if stale. Thread-safe, non-blocking.
+    Only merges data when API returns actual positions — never overwrites
+    existing profile data with an empty API response.
+    """
+    now = time.time()
+    last = getattr(p, '_last_api_fetch', 0) or 0
+    if now - last < PROFILE_STALE_TTL:
+        return
+    with _refresh_locks_lock:
+        if p.wallet not in _refresh_locks:
+            _refresh_locks[p.wallet] = threading.Lock()
+    lock = _refresh_locks.get(p.wallet)
+    if not lock or not lock.acquire(blocking=False):
+        return
+    try:
+        if time.time() - getattr(p, '_last_api_fetch', 0) < PROFILE_STALE_TTL:
+            return
+        closed = pm.get_user_closed_positions(p.wallet, limit=500)
+        # Only merge if API returned actual data; don't overwrite existing stats with silence
+        if closed:
+            p.merge_positions(closed)
+            p._last_api_fetch = time.time()
+            save_profiles(load_profiles())
+        else:
+            # Stamp so we don't re-query on every card call
+            p._last_api_fetch = time.time()
+    except Exception:
+        pass
+    finally:
+        lock.release()
 
 def update_profile(wallet: str, name: str, positions: list[dict]):
     """
@@ -318,6 +363,7 @@ def update_profile(wallet: str, name: str, positions: list[dict]):
         profiles[wallet] = WalletProfile(wallet)
     p = profiles[wallet]
     p.name = name or p.name
+    p._last_api_fetch = time.time()  # stamp so min_fresh knows it's current
     p.merge_positions(positions)  # dedupes + full recalc
     save_profiles(profiles)
     return p

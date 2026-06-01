@@ -109,21 +109,45 @@ def _leaderboard_wallet_to_big_wins(entry_raw: dict[str, Any], rank: int) -> lis
     # Use OMPA-backed LIFETIME win rate (replaces 30-day window)
     # The 30-day window gives misleading 100% for whales with few recent trades.
     # Cumulative stats improve with every scan.
-    from repos.whaletrax.wallet_profiles import get_profile, update_profile
+    from wallet_profiles import get_profile, update_profile
     profile = get_profile(entry.proxy_wallet)
     profile.name = entry.name  # keep name fresh
     # Pass ALL closed positions at once — merge_positions dedupes and recalculates
     if closed:
         update_profile(entry.proxy_wallet, entry.name, closed)
+    # Reload after update so we use the refreshed cached aggregates
+    profile = get_profile(entry.proxy_wallet)
+    profile.name = entry.name
+    inverse, reason = _classify_inverse_candidate(profile)
     # Assign lifetime win rate to all big wins from this wallet
     lifetime_rate = profile.win_rate
     for bw in big_wins:
         bw.win_rate = lifetime_rate
         bw.win_rate_30d = profile.win_rate_30d
         bw.win_streak = profile.current_streak
+        bw.inverse_candidate = inverse
+        bw.inverse_reason = reason
 
     return big_wins
 
+
+
+
+def _classify_inverse_candidate(profile) -> tuple[bool, str]:
+    """Flag wallets that are better treated as inverse/fade candidates."""
+    try:
+        total = int(getattr(profile, 'total_positions', 0) or 0)
+        wr = float(getattr(profile, 'win_rate', 0) or 0)
+        wr30 = float(getattr(profile, 'win_rate_30d', 0) or 0)
+        pnl = float(getattr(profile, 'total_pnl', 0) or 0)
+        pnl30 = float(getattr(profile, 'pnl_30d', 0) or 0)
+    except Exception:
+        return False, ''
+    if total >= 10 and wr <= 10 and wr30 <= 10:
+        return True, f'Persistent loser: {wr:.1f}% lifetime WR / {wr30:.1f}% 30D WR'
+    if total >= 20 and pnl < 0 and pnl30 <= 0:
+        return True, f'Negative P/L: {pnl:,.0f} lifetime / {pnl30:,.0f} 30D'
+    return False, ''
 
 def scan_big_wins_from_leaderboard(
     top_n: int = config.LEADERBOARD_TOP_N,

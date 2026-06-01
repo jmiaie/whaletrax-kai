@@ -11,8 +11,13 @@ import sys, os, json, logging, time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-sys.path.insert(0, '/home/ubuntu/.openclaw/workspace/repos/whaletrax')
-os.chdir('/home/ubuntu/.openclaw/workspace/repos/whaletrax')
+ROOT = '/home/ubuntu/.openclaw/workspace'
+REPO = '/home/ubuntu/.openclaw/workspace/repos/whaletrax'
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+if REPO not in sys.path:
+    sys.path.insert(0, REPO)
+os.chdir(REPO)
 import requests
 from src import config, big_win_detector as bwd, polymarket_client as pm
 from polyshark_memory import ingest_alert, ingest_fault, ingest_whale, ingest_streak, ingest_rank_change, ingest_market
@@ -40,7 +45,25 @@ MIN_SIZE     = 100
 _cycle_sends = 0
 _cycle_rl_errors = 0
 
-TOKEN = '8741871021:AAGtWosFayhX82ls7W3ZNcNh5cIQcEbAEpM'
+# Active bot: Kaizen8_bot (8534952394)
+# Load bot token from secrets file — never hardcode
+_TELEGRAM_TOKEN_FILE = '/home/ubuntu/.openclaw/.secrets/polyshark.env'
+def _load_token():
+    p = Path(_TELEGRAM_TOKEN_FILE)
+    if p.exists():
+        for line in p.read_text().splitlines():
+            if line.startswith('TELEGRAM_BOT_TOKEN='):
+                return line.split('=', 1)[1].strip()
+    # Fallback: try gateway config
+    import json, re, os
+    gw_path = os.path.expanduser('~/.openclaw/openclaw.json')
+    if os.path.exists(gw_path):
+        raw = open(gw_path).read()
+        m = re.search(r'"botToken"\s*:\s*"([^"]+)"', raw)
+        if m:
+            return m.group(1)
+    raise RuntimeError('Telegram bot token not found in secrets or config')
+TOKEN = _load_token()
 
 CHANNELS = {
     'hub':      int(os.environ.get('CHANNEL_POLYSHARK_HUB',      '-1003786930778')),  # Polyshark Alert Group
@@ -171,6 +194,16 @@ def load_queue():
             seen = set()
             deduped = []
             for item in q:
+                # Skip items already sent on all channels — they're stale
+                if item.get('pro_sent') and item.get('free_sent'):
+                    continue
+                # Drop items older than 24h regardless
+                try:
+                    qtime = datetime.fromisoformat(item.get('queued_at','').replace('Z','+00:00')).replace(tzinfo=timezone.utc)
+                    if (datetime.now(timezone.utc) - qtime).total_seconds() > 86400:
+                        continue
+                except Exception:
+                    pass
                 key = f"{item.get('market_id','')}_{item.get('wallet','')}"
                 if key in seen:
                     continue
@@ -296,7 +329,7 @@ def format_card(bw, tier='PRO', channel_id=None):
     from wallet_profiles import get_profile
 
     wallet = (getattr(bw, 'wallet', '') or '').lower()
-    prof = get_profile(wallet) if wallet else None
+    prof = get_profile(wallet, min_fresh=True) if wallet else None
 
     # Wallet age for new-wallet note
     wallet_age_days = None
@@ -365,12 +398,17 @@ def format_card(bw, tier='PRO', channel_id=None):
     trades_n = int(getattr(bw, 'total_positions', None) or (prof.total_positions if prof else 0) or 0)
 
     def fmt_wr(v):
-        return f'{int(round(v))}%' if v and v > 0 else '--'
+        return f'{int(round(v))}%' if v is not None and v >= 0 else '--'
     def fmt_pnl(v):
-        return '$-' if v == 0 else f'{v:+,.0f}$'
+        return f'{v:+,.0f}$' if v is not None else '$-'
 
-    recent_line = f'🏅 Recent: {fmt_wr(wr_30)} WR | 💰 {fmt_pnl(pnl_30)} P/L'
+    recent_line = f'🏅 30Day: {fmt_wr(wr_30)} WR | 💰 {fmt_pnl(pnl_30)} P/L'
     lifetime_line = f'🏆 Lifetime: {fmt_wr(wr_lt)} WR | 💵 {fmt_pnl(pnl_lt)} P/L'
+    inverse_candidate = bool(getattr(bw, 'inverse_candidate', False))
+    inverse_reason = str(getattr(bw, 'inverse_reason', '') or '')
+    if inverse_candidate:
+        recent_line = f'🔁 Inverse watch: {fmt_wr(wr_30)} WR | {fmt_pnl(pnl_30)} P/L'
+        lifetime_line = f'⚠️ Fade candidate: {fmt_wr(wr_lt)} WR | {fmt_pnl(pnl_lt)} P/L'
     new_wallet_line = '🆕 New wallet: less than a month of experience' if (wallet_age_days is not None and wallet_age_days <= 30) else ''
     conf = f'[Confidence: {int(getattr(bw, "confidence", 43) or 43)}%]'
 
@@ -384,6 +422,8 @@ def format_card(bw, tier='PRO', channel_id=None):
     dates = f'📅 O: {trade_date} | C: {end_date[:10] if end_date else "—"}'
 
     lines = [header]
+    if inverse_candidate and inverse_reason:
+        lines.append(f'🧭 Inverse candidate: {inverse_reason}')
     if new_wallet_line:
         lines.append(new_wallet_line)
     lines += [
@@ -419,6 +459,12 @@ def process_queue(state):
 
         # Pro channel — fire once when ready (3-min delay)
         if pro_ready and not item.get('pro_sent'):
+            item_hash = f"{item.get('market_id','')}_{item.get('wallet','')}"
+            if item.get('_fired_hash') == item_hash:
+                log.warning(f'DUPLICATE PRO FIRE BLOCKED: {item["question"][:40]}')
+                item['pro_sent'] = True
+                dirty = True
+                continue
             bw = bw_from_item(item)
             if bw is None:
                 log.info(f'PRO filtered (resolved/null): {item["question"][:40]}')
@@ -428,9 +474,13 @@ def process_queue(state):
 
             # CLOB validation for queued items (check once per item)
             if not item.get('_clob_validated'):
-                enriched = validate_and_enrich(bw)
+                try:
+                    enriched = validate_and_enrich(bw)
+                except Exception as e:
+                    log.warning(f'CLOB validation error for queued item: {e}')
+                    enriched = bw
                 if enriched is None:
-                    log.info(f'CLOB rejected queued item: {item.get("market_id","")[:20]}...')
+                    log.info(f"CLOB rejected queued item: {item.get('market_id','')[:20]}...")
                     item['pro_sent'] = True  # mark sent so it won't reprocess
                     dirty = True
                     continue
@@ -438,6 +488,7 @@ def process_queue(state):
             card = format_card(bw, 'pro', CHANNELS['hub'])
             if card:
                 send(CHANNELS['hub'], card)
+                item['_fired_hash'] = item_hash
                 log.info(f'PRO delay fired: {item["question"][:40]}')
                 item['pro_sent'] = True
                 dirty = True
@@ -508,44 +559,25 @@ def bw_from_item(item):
     bw.win_streak          = getattr(bw, 'win_streak', 0) or 0
 
     # Look up wallet profile for real win rate / streak / trade count
-    import os, sqlite3
-    wp_path = os.path.join(os.path.dirname(__file__), '__pycache__', '..', 'wallet_profiles.json')
-    if not os.path.exists(wp_path):
-        wp_path = '/tmp/wallet_profiles.json'
-    loaded_profile = False
-    if os.path.exists(wp_path):
-        try:
-            wps = _json.loads(open(wp_path).read())
-            waddr = (bw.wallet or '').lower()
-            if waddr in wps:
-                wp = wps[waddr]
-                bw.win_rate        = wp.get('win_rate', 0) or 0
-                bw.win_rate_30d    = wp.get('win_rate_30d', 0) or 0
-                bw.total_positions = wp.get('total_positions', 0) or 0
-                bw.win_streak      = wp.get('current_streak', 0) or 0
-                loaded_profile = True
-        except Exception:
-            pass
-    if not loaded_profile:
-        try:
-            db_path = '/home/ubuntu/.openclaw/workspace/repos/whaletrax/wallet_tracker.db'
-            if os.path.exists(db_path):
-                conn = sqlite3.connect(db_path)
-                row = conn.execute('SELECT total_pnl, win_rate_pct, roi_30d, total_positions FROM tracked_wallets WHERE wallet_address=?', ((bw.wallet or '').lower(),)).fetchone()
-                conn.close()
-                if row:
-                    # prefer the live wallet tracker if available
-                    bw.win_rate        = row[1] or bw.win_rate or 0
-                    bw.win_rate_30d    = row[2] or bw.win_rate_30d or 0
-                    bw.total_positions = row[3] or bw.total_positions or 0
-        except Exception:
-            pass
+    # Uses get_profile(min_fresh=True) which auto-refreshes from API if stale (>5 min)
+    try:
+        prof = get_profile(bw.wallet, min_fresh=True) if bw.wallet else None
+        if prof:
+            bw.win_rate        = prof.win_rate        or bw.win_rate        or 0
+            bw.win_rate_30d   = prof.win_rate_30d    or bw.win_rate_30d    or 0
+            bw.total_positions= prof.total_positions  or bw.total_positions  or 0
+            bw.win_streak     = prof.current_streak  or bw.win_streak      or 0
+            bw.pnl_30d        = getattr(prof, 'pnl_30d', 0) or 0
+    except Exception:
+        pass
 
-    # Fallback: from item
-    bw.win_rate        = bw.win_rate        or item.get('win_rate', 0)
-    bw.win_rate_30d    = bw.win_rate_30d    or item.get('win_rate_30d', 0)
-    bw.total_positions = bw.total_positions or item.get('total_positions', 0)
-    bw.win_streak     = bw.win_streak      or item.get('win_streak', 0)
+    # If profile lookup left us with 0s (wallet not yet cached and API returned nothing),
+    # fall back to the values already stored in the queue item from when it was captured.
+    # This preserves the detector's computed win_rate / streak rather than zeroing them.
+    bw.win_rate        = bw.win_rate        or item.get('win_rate', 0) or 0
+    bw.win_rate_30d    = bw.win_rate_30d    or item.get('win_rate_30d', 0) or 0
+    bw.total_positions = bw.total_positions or item.get('total_positions', 0) or 0
+    bw.win_streak     = bw.win_streak      or item.get('win_streak', 0) or 0
     return bw
 
 
@@ -679,6 +711,9 @@ def run():
             'avg_price':            bw.avg_price if hasattr(bw, 'avg_price') else 0,
             'leaderboard_volume':   getattr(bw, 'leaderboard_volume', 0),
             'win_rate':             getattr(bw, 'win_rate', 0),
+            'win_rate_30d':         getattr(bw, 'win_rate_30d', 0),
+            'pnl_30d':              getattr(bw, 'pnl_30d', 0),
+            'total_positions':      getattr(bw, 'total_positions', 0),
             'win_streak':           getattr(bw, 'win_streak', 0),
             'cats':          cats,
             'best_cat':      best_cat,  # single highest-confidence category

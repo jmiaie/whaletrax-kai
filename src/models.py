@@ -70,6 +70,8 @@ class WalletStats:
     avg_roi_pct: float = 0.0
     rank: int = 0
     big_win_count: int = 0        # trades that qualify as "big wins"
+    inverse_candidate: bool = False
+    inverse_reason: str = ""
 
     @property
     def net_roi_pct(self) -> float:
