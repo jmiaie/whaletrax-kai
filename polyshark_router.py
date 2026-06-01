@@ -400,20 +400,25 @@ def format_card(bw, tier='PRO', channel_id=None):
     pnl_30 = float(getattr(bw, 'pnl_30d', None) or (prof.pnl_30d if prof else 0) or 0)
     trades_n = int(getattr(bw, 'total_positions', None) or (prof.total_positions if prof else 0) or 0)
 
-    def fmt_wr(v):
-        return f'{int(round(v))}%' if v is not None and v >= 0 else '--'
+    def fmt_wr(v, wins=0, total=0):
+        pct = f'{int(round(v))}%' if v is not None and v >= 0 else '--'
+        if total > 0:
+            return f'{pct} ({wins}/{total})'
+        return pct
     def fmt_pnl(v):
         if v is None:
             return '-$'
         return f'+${v:,.0f}' if v >= 0 else f'-${abs(v):,.0f}'
 
-    recent_line = f'🏅 30Day: {fmt_wr(wr_30)} WR | 💰 {fmt_pnl(pnl_30)} P/L'
-    lifetime_line = f'🏆 Lifetime: {fmt_wr(wr_lt)} WR | 💵 {fmt_pnl(pnl_lt)} P/L'
+    wins_lt = int(getattr(bw, 'wins_lt', 0) or (prof.total_wins if prof else 0) or 0)
+    wins_30 = int(getattr(bw, 'wins_30d', 0) or (getattr(prof, '_wins_30d', 0)) or 0)
+    recent_line = f'🏅 30Day: {fmt_wr(wr_30, wins=wins_30, total=trades_n)} WR | 💰 {fmt_pnl(pnl_30)} P/L'
+    lifetime_line = f'🏆 Lifetime: {fmt_wr(wr_lt, wins=wins_lt, total=trades_n)} WR | 💵 {fmt_pnl(pnl_lt)} P/L'
     inverse_candidate = bool(getattr(bw, 'inverse_candidate', False))
     inverse_reason = str(getattr(bw, 'inverse_reason', '') or '')
     if inverse_candidate:
-        recent_line = f'🔁 Inverse watch: {fmt_wr(wr_30)} WR | {fmt_pnl(pnl_30)} P/L'
-        lifetime_line = f'⚠️ Fade candidate: {fmt_wr(wr_lt)} WR | {fmt_pnl(pnl_lt)} P/L'
+        recent_line = f'🔁 Inverse watch: {fmt_wr(wr_30, wins=wins_30, total=trades_n)} WR | {fmt_pnl(pnl_30)} P/L'
+        lifetime_line = f'⚠️ Fade candidate: {fmt_wr(wr_lt, wins=wins_lt, total=trades_n)} WR | {fmt_pnl(pnl_lt)} P/L'
     new_wallet_line = '🆕 New wallet: less than a month of experience' if (wallet_age_days is not None and wallet_age_days <= 30) else ''
     conf = f'[Confidence: {int(getattr(bw, "confidence", 43) or 43)}%]'
 
@@ -573,6 +578,8 @@ def bw_from_item(item):
             bw.total_positions= prof.total_positions  or bw.total_positions  or 0
             bw.win_streak     = prof.current_streak  or bw.win_streak      or 0
             bw.pnl_30d        = getattr(prof, 'pnl_30d', 0) or 0
+            bw.wins_lt        = prof.total_wins      or 0
+            bw.wins_30d       = getattr(prof, '_wins_30d', 0) or 0
     except Exception:
         pass
 
@@ -719,6 +726,8 @@ def run():
             'win_rate_30d':         getattr(bw, 'win_rate_30d', 0),
             'pnl_30d':              getattr(bw, 'pnl_30d', 0),
             'total_positions':      getattr(bw, 'total_positions', 0),
+            'wins_lt':              getattr(bw, 'wins_lt', 0),
+            'wins_30d':             getattr(bw, 'wins_30d', 0),
             'win_streak':           getattr(bw, 'win_streak', 0),
             'cats':          cats,
             'best_cat':      best_cat,  # single highest-confidence category

@@ -247,6 +247,7 @@ class WalletProfile:
             'name': self.name,
             'total_positions': self._total_positions,
             'total_wins': self._total_wins,
+            '_wins_30d': self._wins_30d,
             'losses': self._losses,
             'win_rate': round(self.win_rate, 1),
             'win_rate_30d': round(self.win_rate_30d, 1),
