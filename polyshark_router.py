@@ -367,7 +367,10 @@ def format_card(bw, tier='PRO', channel_id=None):
     # BET line must reference the trader's selected outcome plus team/location if available.
     side_raw = str(getattr(bw, 'outcome', '') or '').upper()
     side = 'YES' if side_raw not in ('DOWN','NO') else 'NO'
+    # athlete/team name: try outcome (player's name from API), then team_name, etc.
+    # For player props, outcome IS the athlete name; for team markets it's the team name.
     team = (
+        getattr(bw, 'outcome', '') or
         getattr(bw, 'team_name', '') or
         getattr(bw, 'team', '') or
         getattr(bw, 'team_city', '') or
