@@ -568,28 +568,37 @@ def bw_from_item(item):
     bw.total_positions      = getattr(bw, 'total_positions', 0) or 0
     bw.win_streak          = getattr(bw, 'win_streak', 0) or 0
 
-    # Look up wallet profile for real win rate / streak / trade count
-    # Uses get_profile(min_fresh=True) which auto-refreshes from API if stale (>5 min)
+    # Look up wallet profile for real win rate / streak / trade count.
+    # Profile is the authoritative source — always prefer it over queue-item cache.
+    # Only fall back to queue-item values when the wallet has no profile at all (0 positions).
     try:
         prof = get_profile(bw.wallet, min_fresh=False) if bw.wallet else None
-        if prof:
-            bw.win_rate        = prof.win_rate        or bw.win_rate        or 0
-            bw.win_rate_30d   = prof.win_rate_30d    or bw.win_rate_30d    or 0
-            bw.total_positions= prof.total_positions  or bw.total_positions  or 0
-            bw.win_streak     = prof.current_streak  or bw.win_streak      or 0
-            bw.pnl_30d        = getattr(prof, 'pnl_30d', 0) or 0
-            bw.wins_lt        = prof.total_wins      or 0
-            bw.wins_30d       = getattr(prof, '_wins_30d', 0) or 0
+        if prof and prof.total_positions > 0:
+            bw.win_rate        = prof.win_rate
+            bw.win_rate_30d   = prof.win_rate_30d
+            bw.total_positions= prof.total_positions
+            bw.win_streak     = prof.current_streak
+            bw.pnl_30d        = getattr(prof, 'pnl_30d', 0)
+            bw.wins_lt        = prof.total_wins
+            bw.wins_30d       = getattr(prof, '_wins_30d', 0)
+        elif prof and prof.total_positions == 0:
+            # Profile exists but has no positions — use queue item as fallback
+            bw.win_rate        = bw.win_rate        or item.get('win_rate', 0) or 0
+            bw.win_rate_30d    = bw.win_rate_30d    or item.get('win_rate_30d', 0) or 0
+            bw.total_positions = bw.total_positions or item.get('total_positions', 0) or 0
+            bw.win_streak     = bw.win_streak      or item.get('win_streak', 0) or 0
+        # else: no profile at all — use queue item values directly
+        else:
+            bw.win_rate        = item.get('win_rate', 0) or 0
+            bw.win_rate_30d    = item.get('win_rate_30d', 0) or 0
+            bw.total_positions = item.get('total_positions', 0) or 0
+            bw.win_streak     = item.get('win_streak', 0) or 0
     except Exception:
-        pass
-
-    # If profile lookup left us with 0s (wallet not yet cached and API returned nothing),
-    # fall back to the values already stored in the queue item from when it was captured.
-    # This preserves the detector's computed win_rate / streak rather than zeroing them.
-    bw.win_rate        = bw.win_rate        or item.get('win_rate', 0) or 0
-    bw.win_rate_30d    = bw.win_rate_30d    or item.get('win_rate_30d', 0) or 0
-    bw.total_positions = bw.total_positions or item.get('total_positions', 0) or 0
-    bw.win_streak     = bw.win_streak      or item.get('win_streak', 0) or 0
+        # On any error, fall back to queue item
+        bw.win_rate        = item.get('win_rate', 0) or 0
+        bw.win_rate_30d    = item.get('win_rate_30d', 0) or 0
+        bw.total_positions = item.get('total_positions', 0) or 0
+        bw.win_streak     = item.get('win_streak', 0) or 0
     return bw
 
 
