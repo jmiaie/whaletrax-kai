@@ -329,7 +329,7 @@ def format_card(bw, tier='PRO', channel_id=None):
     from wallet_profiles import get_profile
 
     wallet = (getattr(bw, 'wallet', '') or '').lower()
-    prof = get_profile(wallet, min_fresh=True) if wallet else None
+    prof = get_profile(wallet, min_fresh=False) if wallet else None
 
     # Wallet age for new-wallet note
     wallet_age_days = None
@@ -388,7 +388,7 @@ def format_card(bw, tier='PRO', channel_id=None):
 
     size_line = f'💵 ${trade_size:,.0f} position | Entry: {entry_px*100:.1f}¢'
     roi_label = 'potential ROI' if is_open else 'ROI'
-    profit = f'✅ {profit_usdc:+,.0f}$ | ✅ {roi_pct:+.2f}% {roi_label}' if profit_usdc >= 0 else f'💰 {profit_usdc:+,.0f}$ | 💲 {roi_pct:.2f}% {roi_label}'
+    profit = f'✅ +${profit_usdc:,.0f} | ✅ +{roi_pct:.2f}% {roi_label}' if profit_usdc >= 0 else f'💰 -${abs(profit_usdc):,.0f} | 💲 -{abs(roi_pct):.2f}% {roi_label}'
 
     # Use profile values for recent/lifetime stats; never derive from ROI or profit line.
     wr_lt = float(getattr(bw, 'win_rate', None) or (prof.win_rate if prof else 0) or 0)
@@ -400,7 +400,9 @@ def format_card(bw, tier='PRO', channel_id=None):
     def fmt_wr(v):
         return f'{int(round(v))}%' if v is not None and v >= 0 else '--'
     def fmt_pnl(v):
-        return f'{v:+,.0f}$' if v is not None else '$-'
+        if v is None:
+            return '-$'
+        return f'+${v:,.0f}' if v >= 0 else f'-${abs(v):,.0f}'
 
     recent_line = f'🏅 30Day: {fmt_wr(wr_30)} WR | 💰 {fmt_pnl(pnl_30)} P/L'
     lifetime_line = f'🏆 Lifetime: {fmt_wr(wr_lt)} WR | 💵 {fmt_pnl(pnl_lt)} P/L'
@@ -561,7 +563,7 @@ def bw_from_item(item):
     # Look up wallet profile for real win rate / streak / trade count
     # Uses get_profile(min_fresh=True) which auto-refreshes from API if stale (>5 min)
     try:
-        prof = get_profile(bw.wallet, min_fresh=True) if bw.wallet else None
+        prof = get_profile(bw.wallet, min_fresh=False) if bw.wallet else None
         if prof:
             bw.win_rate        = prof.win_rate        or bw.win_rate        or 0
             bw.win_rate_30d   = prof.win_rate_30d    or bw.win_rate_30d    or 0
@@ -726,7 +728,7 @@ def run():
         })
         if is_curated:
             state['curated_sent'] = state.get('curated_sent', 0) + 1
-            log.info(f'★ CURATED PICK: {bw.market_question[:50]} | ROI {bw.roi_pct:.0f}% | Profit ${bw.profit_usdc:,.0f}')
+            log.info(f'★ CURATED PICK: {bw.market_question[:50]} | ROI +{bw.roi_pct:.0f}% | Profit +${bw.profit_usdc:,.0f}')
 
         seen.add(key)
         state['total_sent'] += 1
