@@ -134,10 +134,15 @@ def get_user_positions(wallet: str) -> list[dict[str, Any]]:
     return []
 
 
-def get_user_closed_positions(wallet: str, limit: int = config.DEFAULT_PAGE_LIMIT) -> list[dict[str, Any]]:
-    """Return closed/resolved positions for *wallet*."""
+def get_user_closed_positions(wallet: str, limit: int = 1000) -> list[dict[str, Any]]:
+    """Return ALL closed/resolved positions for *wallet*, paginating through all pages.
+    
+    Polymarket API caps at 50 positions per request regardless of limit.
+    Uses limit=50 internally per page to ensure _paginate continues (50 < 50 is False).
+    """
     url = f"{config.DATA_API_BASE}/closed-positions"
-    params: dict[str, Any] = {"user": wallet, "limit": limit}
+    # Internal page size of 50 ensures pagination continues (50 < 50 == False)
+    params: dict[str, Any] = {"user": wallet, "limit": 50}
     raw = _paginate(url, params)
     # Some API versions wrap under "positions"
     if raw and isinstance(raw[0], dict) and "positions" in raw[0]:
