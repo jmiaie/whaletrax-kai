@@ -19,8 +19,9 @@ MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 RETRY_BACKOFF = float(os.getenv("RETRY_BACKOFF", "1.5"))  # seconds between retries
 
 # ── Pagination defaults ──────────────────────────────────────────────────────
-DEFAULT_PAGE_LIMIT = int(os.getenv("DEFAULT_PAGE_LIMIT", "100"))
-MAX_PAGES = int(os.getenv("MAX_PAGES", "10"))  # max pages to fetch per query
+DEFAULT_PAGE_LIMIT = int(os.getenv("DEFAULT_PAGE_LIMIT", "50"))
+MAX_PAGES = int(os.getenv("MAX_PAGES", "200"))  # max pages per query (200 x 50 = 10,000)
+MAX_RECORDS_PER_QUERY = int(os.getenv("MAX_RECORDS_PER_QUERY", "10000"))  # hard ceiling
 
 # ── Big-win detection thresholds ─────────────────────────────────────────────
 # A trade is a "big win" when ALL of the following are met:

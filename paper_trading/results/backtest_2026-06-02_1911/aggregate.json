@@ -1,0 +1,23 @@
+{
+  "label": "backtest",
+  "timestamp": "2026-06-02T19:11:19.651907+00:00",
+  "wallets_tested": 1,
+  "total_trades": 2190,
+  "total_pnl": 14364170.69,
+  "win_rate_pct": 100.0,
+  "avg_pnl_per_trade": 6558.98,
+  "results": [
+    {
+      "total_trades": 2190,
+      "wins": 2190,
+      "losses": 0,
+      "win_rate_pct": 100.0,
+      "total_pnl": 14364170.69,
+      "avg_win": 6558.98,
+      "avg_loss": 0.0,
+      "avg_roi_pct": 23.89,
+      "wallet": "0xfe787d2da716d60e8acff57fb87eb13cd4d10319",
+      "positions_checked": 5000
+    }
+  ]
+}

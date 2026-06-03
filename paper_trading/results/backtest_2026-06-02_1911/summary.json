@@ -1,0 +1,14 @@
+[
+  {
+    "total_trades": 2190,
+    "wins": 2190,
+    "losses": 0,
+    "win_rate_pct": 100.0,
+    "total_pnl": 14364170.69,
+    "avg_win": 6558.98,
+    "avg_loss": 0.0,
+    "avg_roi_pct": 23.89,
+    "wallet": "0xfe787d2da716d60e8acff57fb87eb13cd4d10319",
+    "positions_checked": 5000
+  }
+]

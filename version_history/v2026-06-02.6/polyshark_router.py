@@ -21,7 +21,6 @@ os.chdir(REPO)
 import requests
 from src import config, big_win_detector as bwd, polymarket_client as pm
 from polyshark_memory import ingest_alert, ingest_fault, ingest_whale, ingest_streak, ingest_rank_change, ingest_market
-from wallet_profiles import get_profile
 from src.market_enricher import validate_and_enrich
 
 STATE_FILE  = Path('/tmp/polyshark_router_state.json')
@@ -32,17 +31,11 @@ PAUSE_FILE  = Path('/tmp/polyshark_router_paused')  # anti-spam killswitch
 MAX_PER_RUN = 1
 MAX_SENDS_PER_CYCLE = 12   # hard cap on total sends per cycle (PRO + category + free)
 POLL_TOP_N  = 20
-# ── FREE CHANNEL DELAY CONTROLS ─────────────────────────────────────────────────
-# FREE_ALERT_DELAY_SECONDS: seconds before free channel fires after item is queued.
-# Set to 21600 (6 hrs) for standard free tier delay. Can override via env var.
-FREE_ALERT_DELAY_SECONDS = int(os.environ.get('POLYSHARK_FREE_DELAY_SECONDS', '21600'))
-FREE_DELAY = timedelta(seconds=FREE_ALERT_DELAY_SECONDS)
-# NOTE: Previously hardcoded at 90 minutes (5400s); now defaults to 6 hours.
+FREE_DELAY   = timedelta(minutes=90)
 CURATED_DELAY = timedelta(minutes=5)  # curated forward delay
 MAX_CURATED  = 4
 CAT_DELAY    = timedelta(minutes=10)
-PRO_ALERT_DELAY_SECONDS = int(os.environ.get('POLYSHARK_PRO_DELAY_SECONDS', '10'))  # env override: POLYSHARK_PRO_DELAY_SECONDS
-PRO_DELAY    = timedelta(seconds=PRO_ALERT_DELAY_SECONDS)
+PRO_DELAY    = timedelta(minutes=3)
 SEND_PAUSE   = 45
 MIN_PROFIT   = 500
 MIN_ROI      = 50
@@ -76,10 +69,9 @@ def _load_token():
 TOKEN = _load_token()
 
 CHANNELS = {
-    'alert':    int(os.environ.get('CHANNEL_ALERT_GROUP',         '-1003786930778')),  # Alert Group (internal/bots/personal circle)
+    'hub':      int(os.environ.get('CHANNEL_POLYSHARK_HUB',      '-1003786930778')),  # Polyshark Alert Group
     'pro':      int(os.environ.get('CHANNEL_POLYSHARK_PRO',      '-1003739747776')),  # PolysharkPRO
-    'top_plays':int(os.environ.get('CHANNEL_TOP_PLAYS_US',      '-1003957370508')),  # Polyshark TOP PLAYS US
-    'sports':   int(os.environ.get('CHANNEL_POLYSHARK_SPORTS',  '-1003948034686')),
+    'sports':   int(os.environ.get('CHANNEL_POLYSHARK_SPORTS',   '-1003948034686')),
     'crypto':   int(os.environ.get('CHANNEL_POLYSHARK_CRYPTO',   '-1003999731708')),
     'weather':  int(os.environ.get('CHANNEL_POLYSHARK_WEATHER',  '-1003532326443')),
     'world':    int(os.environ.get('CHANNEL_POLYSHARK_WORLD',    '-1003927756388')),
@@ -153,7 +145,7 @@ SPORTS_KW    = [
 ]
 
 ESPORTS_KW    = [
-    'counter-strike','esports','cs2','csgo','valorant','league of legends','lol:','lck','lol worlds',
+    'esports','cs2','csgo','valorant','league of legends','lol:','lck','lol worlds',
     'dota 2','rocket league','call of duty','the international','worlds','champions',
     'blast','iem','esl','epic games','riot games','blizzard','g2','faze','navi',
     'sentinels','cloud9','c9','100 thieves','100t','fnatic','team liquid','liquid',
@@ -182,17 +174,6 @@ POLITICS_KW  = ['election','trump','biden','congress','senate','vote','political
                  'democrat','parliament','president','governor','supreme court']
 WORLD_KW     = ['world','global','international','war','g7','g20','oil','geopolitical']
 ECON_KW      = ['gdp','inflation','fed','rate','interest','recession','economy','unemployment']
-ELECTIONS_KW = ['election','vote','ballot','electoral','electoral college','polling','poll','exit poll',
-                'election day','midterm','governor race','senate race','house race','primary','runoff']
-IRAN_KW      = ['iran','tehran','persian','iranian','iran nuclear','sanctions',' IAEA']
-FINANCE_KW   = ['stock','nasdaq','dow','s&p','earnings','revenue','profit','quarter','sec','sec filing',
-                'IPO','market cap','bonds','treasury','yield','debt','credit','loan','bank','banking']
-GEOPOLITICS_KW = ['nato','ukraine','russia','china','taiwan','south china sea','sanctions','treaty',
-                  'diplomacy','embassy','consulate','UN','UN security council','NATO','WWIII']
-TECH_KW      = ['AI','artificial intelligence','meta','google','apple','amazon','nvidia','openai',
-                'anthropic','startup','tech','software','chip','semiconductor','LLM','model']
-CULTURE_KW   = ['oscar','grammy','emmy','award','movie','film','music','album','song','book',
-                'bestseller','festival','concert','exhibit','museum','art','celebrity','star']
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s',
                     handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()])
@@ -310,19 +291,13 @@ def detect_categories_with_confidence(question: str):
     q = question.lower()
     scores = {}
     for cat, kws in [
-        ('sports',      SPORTS_KW),
-        ('esports',     ESPORTS_KW),
-        ('crypto',      CRYPTO_KW),
-        ('weather',     WEATHER_KW),
-        ('politics',    POLITICS_KW),
-        ('world',       WORLD_KW),
-        ('econ',        ECON_KW),
-        ('elections',   ELECTIONS_KW),
-        ('iran',        IRAN_KW),
-        ('finance',     FINANCE_KW),
-        ('geopolitics', GEOPOLITICS_KW),
-        ('tech',        TECH_KW),
-        ('culture',     CULTURE_KW),
+        ('sports',   SPORTS_KW),
+        ('esports',  ESPORTS_KW),
+        ('crypto',   CRYPTO_KW),
+        ('weather',  WEATHER_KW),
+        ('politics', POLITICS_KW),
+        ('world',    WORLD_KW),
+        ('econ',     ECON_KW),
     ]:
         score = sum(1 for kw in kws if kw in q)
         if cat == 'sports' and score > 0:
@@ -397,7 +372,7 @@ def detect_categories(q):
     if any(k in q for k in ECON_KW):       cats.append('econ')
     return cats if cats else ['pro']
 
-def format_card(bw, tier='PRO', channel_id=None, free_card=False):
+def format_card(bw, tier='PRO', channel_id=None):
     import datetime as dt
     from wallet_profiles import get_profile
 
@@ -430,87 +405,23 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
     trade_size = float(getattr(bw, 'trade_size_usdc', 0) or 0)
     profit_usdc = float(getattr(bw, 'profit_usdc', 0) or 0)
     roi_pct = float(getattr(bw, 'roi_pct', 0) or 0)
-    is_open = float(getattr(bw, "avg_price", 0) or 0) < 1.0
+    is_open = bool(getattr(bw, 'is_open', True))
     if is_open:
         roi_pct = (1.0 / entry_px - 1) * 100
         if trade_size > 0:
             profit_usdc = (trade_size / entry_px) - trade_size
 
     q = getattr(bw, 'market_question', '') or '?'
-    # Sport emoji derived from team/player names in the question — mirrors what appears in the market line
-    sports_keywords = {
-        '⚾': ['yankees','red sox','cubs','dodgers','mets','marlins','astros','phillies','padres','brewers','guardians','tigers','twins','orioles','athletics','rangers','diamondbacks','giants','mariners','reds','rockies',' nationals','dodger','yankee','marlins','royals','whitesox','whites ox'],
-        '🏈': ['chiefs','bills','cowboys','packers','patriots','eagles','lions','vikings','saints','buccaneers','raiders','chargers','broncos','falcons','panthers','bears','cardinals','rams','seahawks','giants nyg','jets','bengals','texans','colts','jaguars','browns','steelers','ravens','nfl','football'],
-        '🏀': ['celtics','heat','lakers','warriors','clippers','nuggets','suns','mavericks','bucks','hawks','hornets','nets','knicks','magic','pistons','pacers','wizards','cavaliers','bulls','raptors','rockets','spurs','pelicans','jazz','grizzlies','timberwolves','thunder','nba','basketball'],
-        '🏒': ['bruins','rangers nyr','maple leafs','canucks','oilers','flames','capitals','stars','predators','hurricanes','devils','islanders','sabres','senators','canadiens','blue jackets','flyers','red wings','sharks','ducks','kings','kraken','golden knights','blues','blackhawks','lightning','wild','nhl','hockey'],
-        '⚽': ['fc ','united','city','real madrid','barcelona','arsenal','liverpool','chelsea','manchester','bayern','dortmund','psg','milan','inter','juventus','atletico','tottenham','atalanta','benfica','porto','ajax','leicester','southampton','bournemouth','brighton','brentford','fulham','west ham','villa','palace','forest','Wolves','leeds','charlton','luton','sheffield','norwich','watford','middlesbrough','coventry','blackburn','swansea','hull','bristol','derby','reading','wolves','wolverhampton','nottingham','birmingham city','preston','ipswich','cardiff','sunderland','leicester city','everton','leeds united','manchester united','manchester city','chelsea fc','arsenal fc','tottenham hotspur','liverpool fc'],
-        '🎾': ['wta','atp','roland garros','wimbledon','australian open','us open','tennis'],
-        '🎮': ['esports','counter-strike','cs2','cs:go','valve','league of legends','lol','riot','epic games','blizzard','tournament','iem','esl','dota','valorant'],
-    }
-    sport_emoji = ''
-    for emoji, kws in sports_keywords.items():
-        if any(kw in q.lower() for kw in kws):
-            sport_emoji = emoji
-            break
-    geo_available = getattr(bw, 'geo_available', 'UNKNOWN') or 'UNKNOWN'
-    # US flag for US-accessible plays (GLOBAL = sports/tennis/soccer via CLOB)
-    # NON_US_ONLY = restricted markets (crypto/finance) → also show 🇺🇸 for US-restricted
-    # only true non-accessible geo gets the globe
-    if geo_available in ('GLOBAL', 'NON_US_ONLY'):
-        geo_tag = '🇺🇸'
-        geo_suffix = ' 🇺🇸'
-    elif geo_available == 'UNKNOWN':
-        geo_tag = ''
-        geo_suffix = ''
-    else:
-        geo_tag = ''
-        geo_suffix = ''
-    # Jeff's format: 🟢 🦈 [Polyshark PRO{geo_suffix}] 🦈
-    # Category tag: show detected category as a colored badge
-    cat_tag = ''
-    cats_on_bw = getattr(bw, 'cats', []) or []
-    if cats_on_bw and 'pro' not in cats_on_bw:
-        cat_map = {
-            'sports':      '🏈 Sports',
-            'esports':     '🎮 Esports',
-            'crypto':      '₿ Crypto',
-            'weather':     '🌤 Weather',
-            'politics':    '🏛 Politics',
-            'world':       '🌐 World',
-            'econ':        '📊 Economy',
-            'elections':   '🗳 Elections',
-            'iran':        '🇮🇷 Iran',
-            'finance':     '💹 Finance',
-            'geopolitics': '🗺 Geopolitics',
-            'tech':        '🤖 Tech',
-            'culture':     '🎭 Culture',
-        }
-        # For sports category, skip cat_tag in favor of sport_emoji (already specific sport)
-        cat_tags = [cat_map.get(c, f'#{c}') for c in cats_on_bw if c != 'pro' and c not in ('sports',)]
-        if cat_tags:
-            cat_tag = f"  {cat_tags[0]}"
-    # Free card format: simplified header + globe badge (no PRO branding)
-    if free_card:
-        geo_badge = ' 🌍' if geo_available == 'GLOBAL' else (' 🇺🇸' if geo_available == 'NON_US_ONLY' else '')
-        header = f'🟢 🦈 [Polyshark{geo_badge}] 🦈🟢'
-        market = f'🎟️ {q}'  # no sport emoji on free cards
-    else:
-        header = f'🟢 🦈 [Polyshark PRO{geo_suffix}{cat_tag}{sport_emoji}] 🦈🟢'
-        market = f'🎟️ {sport_emoji} {q}' if sport_emoji else f'🎟️ {q}'
+    sport_emoji = '⚾' if any(k in q.lower() for k in ['athletics','yankees','mets','dodgers','rangers','red sox','cubs','mariners','padres','brewers','phillies','marlins','diamondbacks','giants','orioles','astros','guardians','twins','tigers','reds']) else ''
+    classification_badge = '💰 Six-Figure Profit' if profit_usdc >= 100000 else ('🐋 Whale Alert' if trade_size >= 100000 else '')
+    header = f'🟢 {classification_badge} [{tier.upper()}] 🏅' if classification_badge else f'🟢 [{tier.upper()}] 🏅'
+    market = f'🏅 {sport_emoji} {q}' if sport_emoji else f'🏅 {q}'
 
-    # CLOB-enriched fields (set by validate_and_enrich via process_queue)
-    yes_price = getattr(bw, 'yes_price', None)
-    no_price  = getattr(bw, 'no_price', None)
-    yes_outcome = getattr(bw, 'yes_outcome', '') or ''
-    no_outcome  = getattr(bw, 'no_outcome', '') or ''
-    game_start_fmt = getattr(bw, 'game_start_fmt', '') or ''
-    market_slug = getattr(bw, 'market_slug', '') or ''  # already formatted: 'MLB · KC vs CIN · 06/01'
-    market_desc = getattr(bw, 'description', '') or ''
-    winner = getattr(bw, 'winner', '') or ''
-
-    # BET line: show trader's pick + current CLOB price context
+    # BET line must reference the trader's selected outcome plus team/location if available.
     side_raw = str(getattr(bw, 'outcome', '') or '').upper()
     side = 'YES' if side_raw not in ('DOWN','NO') else 'NO'
+    # athlete/team name: try outcome (player's name from API), then team_name, etc.
+    # For player props, outcome IS the athlete name; for team markets it's the team name.
     team = (
         getattr(bw, 'outcome', '') or
         getattr(bw, 'team_name', '') or
@@ -523,6 +434,8 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
         getattr(bw, 'picked_outcome', '') or
         ''
     )
+    # Rule: if team is just "Yes" or "No" (binary market with no team/player name),
+    # don't repeat the outcome — just say "BET YES" or "BET NO"
     if team.strip().lower() in ('yes', 'no'):
         bet = '🎯 ⬆️ BET YES' if side == 'YES' else '🎯 ⬇️ BET NO'
     elif team:
@@ -530,27 +443,9 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
     else:
         bet = f'🎯 ⬆️ BET {side}' if side == 'YES' else f'🎯 ⬇️ BET {side}'
 
-    # Add current market price context to bet line for open trades
-    if is_open and yes_price is not None:
-        # Show entry vs current price to highlight unrealized gain
-        entry_pct = entry_px * 100
-        cur_pct = (yes_price * 100) if side == 'YES' else (no_price * 100 if no_price else 0)
-        if cur_pct > 0:
-            bet += f' | Now: {cur_pct:.1f}¢'
-
     size_line = f'💵 ${trade_size:,.0f} position | Entry: {entry_px*100:.1f}¢'
     roi_label = 'potential ROI' if is_open else 'ROI'
     profit = f'💰 +${profit_usdc:,.0f} (+{roi_pct:.2f}% {roi_label})' if profit_usdc >= 0 else f'💰 -${abs(profit_usdc):,.0f} (-{abs(roi_pct):.2f}% {roi_label})'
-
-    # Add market context line (game start, market type)
-    context_parts = []
-    if game_start_fmt:
-        context_parts.append(f'🏟️ {game_start_fmt}')
-    if market_slug:
-        # Format slug: "mlb-kc-cin-2026-06-01" → "MLB · KC vs Cin · Jun 1"
-        slug_clean = market_slug.replace('-', ' ').replace('  ', ' ')
-        # 📋 slug line removed — redundant with 🏟️ game start time
-    market_context = ' · '.join(context_parts) if context_parts else ''
 
     # Use profile values for recent/lifetime stats; never derive from ROI or profit line.
     wr_lt = float(getattr(bw, 'win_rate', None) or (prof.win_rate if prof else 0) or 0)
@@ -563,7 +458,7 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
         if total > 0:
             # Derive % directly from wins/total to avoid mismatch with pre-calculated v
             pct = f'{int(round(wins/total*100))}%'
-            return f'{pct} WR ({wins}/{total})'  # WR after % but before parens
+            return f'{pct} ({wins}/{total})'
         pct = f'{int(round(v))}%' if v is not None and v >= 0 else '--'
         return pct
     def fmt_pnl(v):
@@ -583,45 +478,17 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
     # pos_30d: use bw.pos_30d only if it's a meaningful value (not 0 from unset fallback)
     _bw_pos_30 = getattr(bw, 'pos_30d', None)
     pos_30 = int(_bw_pos_30) if (_bw_pos_30 is not None and _bw_pos_30 > 0) else int(getattr(prof, '_positions_30d', 0) if prof else 0)
-    # pos_30d: use bw.pos_30d only if it's a meaningful value (not 0 from unset fallback)
-    _bw_pos_30 = getattr(bw, 'pos_30d', None)
-    pos_30 = int(_bw_pos_30) if (_bw_pos_30 is not None and _bw_pos_30 > 0) else int(getattr(prof, '_positions_30d', 0) if prof else 0)
-
-    # Jeff's rule: new wallets (≤30 days old) have identical 30D and lifetime stats.
-    # Consolidate to one clean line instead of showing redundant "30Day" + "Lifetime".
-    is_new_wallet = wallet_age_days is not None and wallet_age_days <= 30
-    is_same_stats = (wr_30 == wr_lt and pnl_30 == pnl_lt and pos_30 == pos_lt)
-    inverse_candidate = bool(getattr(bw, 'inverse_candidate', False))
-
-    if inverse_candidate:
-        inverse_reason = str(getattr(bw, 'inverse_reason', '') or '')
-        recent_line = f'🔁 Inverse watch: {fmt_wr(wr_30, wins=wins_30, total=pos_30) if pos_30 >= MIN_POS_30D else "—"} | — P/L'
-        lifetime_line = f'⚠️ Fade candidate: {fmt_wr(wr_lt, wins=wins_lt, total=pos_lt)} | — P/L'
-        combined_line = None
-        inverse_reason = str(getattr(bw, 'inverse_reason', '') or '')
-        recent_line = f'🔁 Inverse watch: {fmt_wr(wr_30, wins=wins_30, total=pos_30) if pos_30 >= MIN_POS_30D else "—"} | — P/L'
-        lifetime_line = f'⚠️ Fade candidate: {fmt_wr(wr_lt, wins=wins_lt, total=pos_lt)} | — P/L'
-        combined_line = None
-    elif is_new_wallet and is_same_stats:
-        # Same stats — show one clean line, skip both 30Day and Lifetime
-        combined_pct = int(round(wr_lt)) if wr_lt is not None and wr_lt >= 0 else 0
-        combined_wins = wins_lt
-        combined_total = pos_lt
-        if combined_total > 0:
-            pct_str = f'{int(round(combined_wins/combined_total*100))}%'
-        else:
-            pct_str = f'{int(round(wr_lt))}%' if wr_lt is not None and wr_lt >= 0 else '--'
-        combined_line = f'🏅 {pct_str} WR ({combined_wins}/{combined_total}) | 💰 {fmt_pnl(pnl_lt)} P/L'
-        recent_line = None
-        lifetime_line = None
+    # Show 30Day WR only if enough positions exist in the window (avoid misleading single-trade extremes)
+    if pos_30 >= MIN_POS_30D:
+        recent_line = f'🏅 30Day: {fmt_wr(wr_30, wins=wins_30, total=pos_30)} WR | 💰 {fmt_pnl(pnl_30)} P/L'
     else:
-        # Normal case — show both 30Day and Lifetime as separate lines
-        combined_line = None
-        if pos_30 >= MIN_POS_30D:
-            recent_line = f'🏅 30Day: {fmt_wr(wr_30, wins=wins_30, total=pos_30)} | 💰 {fmt_pnl(pnl_30)} P/L'
-        else:
-            recent_line = f'🏅 30Day: — WR | — P/L'
-        lifetime_line = f'🏆 Lifetime: {fmt_wr(wr_lt, wins=wins_lt, total=pos_lt)} | 💵 {fmt_pnl(pnl_lt)} P/L'
+        recent_line = f'🏅 30Day: — WR | — P/L'
+    lifetime_line = f'🏆 Lifetime: {fmt_wr(wr_lt, wins=wins_lt, total=pos_lt)} WR | 💵 {fmt_pnl(pnl_lt)} P/L'
+    inverse_candidate = bool(getattr(bw, 'inverse_candidate', False))
+    inverse_reason = str(getattr(bw, 'inverse_reason', '') or '')
+    if inverse_candidate:
+        recent_line = f'🔁 Inverse watch: {fmt_wr(wr_30, wins=wins_30, total=pos_30) if pos_30 >= MIN_POS_30D else "—"} WR | — P/L'
+        lifetime_line = f'⚠️ Fade candidate: {fmt_wr(wr_lt, wins=wins_lt, total=pos_lt)} WR | — P/L'
     has_old_history = (wallet_age_days is not None and wallet_age_days > 30)
     is_reactivated = has_old_history and (last_trade_days_ago is not None and last_trade_days_ago <= 7)
     # Badge conditions (track separately for lifetime suppression logic)
@@ -638,51 +505,19 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
 
     abbrev = f'{wallet[:6]}...{wallet[-5:]}' if wallet else '0x—'
     trader_link = f'[{abbrev}](https://polymarket.com/profile/{wallet})' if wallet else '0x—'
-    # Geo badge after 🐋 — use CLOB-enriched geo or fallback to queue-item geo
-    geo = getattr(bw, 'geo_available', '') or 'UNKNOWN'
-    if geo == 'GLOBAL' or geo == 'NON_US_ONLY':
-        geo_badge = ' 🇺🇸'
-    elif geo == 'UNKNOWN':
-        geo_badge = ''
-    else:
-        geo_badge = ''
-    trader = f'🌊 <a href="https://polymarket.com/profile/{wallet}">{abbrev}</a> 🐋{geo_badge}'
+    trader = f'🐋 <a href="https://polymarket.com/profile/{wallet}">{abbrev}</a> 🌊'
 
     end_date = getattr(bw, 'end_date', '') or ''
     trade_ts = int(getattr(bw, 'timestamp', 0) or 0)
     trade_date = dt.datetime.fromtimestamp(trade_ts, tz=dt.timezone.utc).strftime('%Y-%m-%d') if trade_ts else '—'
-    # Format: O: 06-02 | C: 2026-06-02 | 🏟️ game start time
-    # Format: O: 06-02 | C: 06-02-2026
-    open_short = trade_date[5:10] if trade_date and len(trade_date) >= 10 else trade_date  # MM-DD
-    close_fmt = end_date[:10]  # YYYY-MM-DD if end_date and len(end_date) >= 10 else '—'
-    if game_start_fmt:
-        dates_line = f'📅 O: {open_short} | C: {close_fmt} | 🏟️ {game_start_fmt}'
-    else:
-        dates_line = f'📅 O: {open_short} | C: {close_fmt}'
+    dates = f'📅 O: {trade_date} | C: {end_date[:10] if end_date else "—"}'
+    # New Trade badge: flag if position was opened within the last 24 hours
+    trade_open_line = ''
+    if trade_ts > 0:
+        age_hours = (dt.datetime.now(dt.timezone.utc).timestamp() - trade_ts) / 3600
+        if age_hours <= 24:
+            trade_open_line = '🆕 New Trade Opened Today'
 
-    # Re-check CLOB at format time: if market is no longer accepting orders, it's RESOLVED
-    is_resolved = not getattr(bw, 'accepting_orders', True)  # True = open by default
-    if is_resolved:
-        trade_open_line = '✅ RESOLVED — position closed'
-        # For resolved markets: use wallet profile's total_pnl as reference P&L
-        # The profit_usdc from leaderboard = potential, not actual realized
-        pnl_label = ''  # Wallet line removed — redundant with Lifetime P/L
-    else:
-        # New Trade badge: flag if position was opened within the last 24 hours
-        trade_open_line = ''
-        pnl_label = ''
-        if trade_ts > 0:
-            age_hours = (dt.datetime.now(dt.timezone.utc).timestamp() - trade_ts) / 3600
-            if age_hours <= 24:
-                trade_open_line = '🆕 New Trade Opened Today'
-
-    geo_available = getattr(bw, 'geo_available', 'UNKNOWN') or 'UNKNOWN'
-    if geo_available == 'GLOBAL':
-        geo_tag = '🌍 Global'
-    elif geo_available == 'NON_US_ONLY':
-        geo_tag = '🇺🇸 US Only'
-    else:
-        geo_tag = ''
     lines = [header]
     if SHOW_NEW_TRADE and trade_open_line:
         lines.append(trade_open_line)
@@ -698,25 +533,22 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
         size_line,
         '',
         bet,
-        dates_line,
+        dates,
+        recent_line,
     ]
-    # market_context (game start) is now merged into dates_line above
-    # if market_context:
-    if pnl_label:
-        lines.append(pnl_label)
-    if combined_line:
-        lines.append(combined_line)
-    elif recent_line:
-        lines.append(recent_line)
-        if lifetime_line:
-            lines.append(lifetime_line)
     if SHOW_CONFIDENCE:
         lines.append(conf)
+
+    # Add blank separator + lifetime line only for established wallets (not young + limited history)
+    log.debug(f'WR_DEBUG appending lifetime_line? {not suppress_lifetime}')
+    if not suppress_lifetime:
+        lines.append('')
+        lines.append(lifetime_line)
+
     lines += [
         '————————————————————————',
         trader,
     ]
-    # geo tag is now in the header — no need to repeat at footer
     return '\n'.join(lines)
 def process_queue(state):
     """Fire category forwards (7 min) and free forwards (6 hr)."""
@@ -760,75 +592,13 @@ def process_queue(state):
                     dirty = True
                     continue
                 item['_clob_validated'] = True
-                # Store enriched data on item so it persists for format_card
-                if isinstance(enriched, dict):
-                    item['_clob_enriched'] = {k: v for k, v in enriched.items()
-                                              if k not in ('market_id',)}
-            # Attach CLOB enrichment: prices, game start, geo, etc.
-            # First-time validation: enriched dict has everything from CLOB
-            # Already-validated items: use stored _clob_enriched
-            enriched_data = item.get('_clob_enriched') if item.get('_clob_validated') else (enriched if isinstance(enriched, dict) else None)
-            if enriched_data:
-                for k, v in enriched_data.items():
-                    if k not in ('market_id',):
-                        setattr(bw, k, v)
-            # Ensure geo_available is set — prefer CLOB-enriched geo over queue-item fallback
-            if not getattr(bw, 'geo_available', None):
-                bw.geo_available = item.get('geo_available', 'UNKNOWN')
-            # Final check before sending: skip fully resolved cards (yes_price = $1.00)
-            # These show as "✅ RESOLVED" cards only when the whale closes/settles the position
-            bw_yes_price = float(getattr(bw, 'yes_price', 0) or 0)
-            if bw_yes_price >= 0.995:
-                item['_fired_hash'] = item_hash
-                item['pro_sent'] = True
-                dirty = True
-                log.info(f'PRO filtered (fully resolved @ {bw_yes_price*100:.1f}¢): {item["question"][:40]}')
-                continue
-
-            # Market resolved — skip PRO and TOP PLAYS entirely
-            # Send as RESOLVED update only to Alert Hub (bots only)
-            try:
-                info = pm.get_market(bw.market_id) if hasattr(bw, 'market_id') else None
-                if info and not info.get('accepting_orders', True):
-                    resolved_card = format_card(bw, 'pro', CHANNELS['alert'])
-                    if resolved_card:
-                        send(CHANNELS['alert'], resolved_card)
-                        # DO NOT send to PRO or TOP PLAYS — resolved plays are curated-only
-                    item['_fired_hash'] = item_hash
-                    item['pro_sent'] = True
-                    dirty = True
-                    log.info(f'PRO resolved (alert only, not PRO): {item["question"][:40]}')
-                    continue
-            except Exception as e:
-                log.warning(f'Resolved check error: {e}')
-
-            # Flow: alert (internal/bots) → pro (queue for Jeff to review)
-            # Jeff manually forwards best cards from PRO → Polyshark TOP PLAYS US
-            card = format_card(bw, 'pro', CHANNELS['alert'])
+            card = format_card(bw, 'pro', CHANNELS['hub'])
             if card:
-                ok_alert = send(CHANNELS['alert'], card)
-                ok_pro   = send(CHANNELS['pro'], card)
-
-                # Auto-route to TOP PLAYS US: top-tier wallets, entry < 60¢, market OPEN
-                # HARD GATE: resolved plays (accepting_orders=False) never go to TOP PLAYS
-                try:
-                    if getattr(bw, 'accepting_orders', True) is not True:
-                        pass  # skip — resolved
-                    else:
-                        tp_wallet = (getattr(bw, 'wallet', '') or '').lower()
-                        tp_prof = get_profile(tp_wallet, min_fresh=False) if tp_wallet else None
-                        if is_top_play(bw, tp_prof):
-                            tp_card = format_card(bw, 'pro', CHANNELS['top_plays'])
-                            if tp_card:
-                                ok_top = send(CHANNELS['top_plays'], tp_card)
-                                log.info(f'TOP PLAYS auto-routed: {item["question"][:40]}')
-                except Exception as e:
-                    log.warning(f'TOP PLAYS routing error: {e}')
-
-                if ok_alert or ok_pro:
+                ok = send(CHANNELS['hub'], card)
+                if ok:
                     try:
                         from card_stats import ingest_card
-                        ingest_card(bw, tier='pro', channel='alert')
+                        ingest_card(bw, tier='pro', channel='hub')
                     except Exception as e:
                         log.warning(f'card_stats ingest error: {e}')
                 item['_fired_hash'] = item_hash
@@ -854,35 +624,9 @@ def process_queue(state):
         item_ready    = curated_ready if item.get('is_curated') else free_ready
 
         if item_ready and not item.get('free_sent'):
-            # Format as FREE card (simplified: no PRO branding, globe badge, reduced stats)
-            try:
-                bw_free = bw_from_item(item) if 'bw_from_item' in dir() else None
-                if bw_free:
-                    # Enrich with CLOB data before formatting
-                    try:
-                        bw_enr = validate_and_enrich(bw_free)
-                        if bw_enr is None:
-                            item['free_sent'] = True
-                            dirty = True
-                            continue
-                        if isinstance(bw_enr, dict):
-                            for k, v in bw_enr.items():
-                                if k not in ('market_id',):
-                                    setattr(bw_free, k, v)
-                    except Exception as e:
-                        log.warning(f'Free CLOB enrich error: {e}')
-                        item['free_sent'] = True
-                        dirty = True
-                        continue
-
-                    free_card_text = format_card(bw_free, 'free', CHANNELS.get('free'), free_card=True)
-                    if free_card_text:
-                        send(CHANNELS['free'], free_card_text)
-                        log.info(f'FREE fired: {item["question"][:40]}')
-            except Exception as e:
-                log.warning(f'Free channel error: {e}')
+            log.info(f'FREE disabled during rollout; retaining queued item: {item["question"][:40]}')
             item['free_sent'] = True
-            dirty = True
+            continue  # drop from queue without sending
 
         updated.append(item)
 
@@ -890,13 +634,18 @@ def process_queue(state):
         save_queue(updated)
 
 def bw_from_item(item):
-    """Reconstruct a minimal object from queued item.
-    
-    Note: We do NOT filter by end_date here — some markets are listed months ahead.
-    We show resolved markets as "✅ RESOLVED" cards so users see outcome/PnL.
-    The accepting_orders check in format_card determines if it's open or resolved.
-    """
+    """Reconstruct a minimal object from queued item. Returns None if market is resolved."""
     from datetime import datetime, timezone as _tz
+
+    # Safety: reject already-resolved markets at format time
+    end = item.get('end_date', '')
+    if end:
+        try:
+            end_dt = datetime.fromisoformat(end.replace('Z', '+00:00')).replace(tzinfo=_tz.utc)
+            if end_dt < datetime.now(_tz.utc):
+                return None  # resolved, don't show
+        except (ValueError, TypeError):
+            pass
 
     # Build a simple namespace object instead of a class
     import json as _json
@@ -916,11 +665,6 @@ def bw_from_item(item):
     bw.outcome             = item.get('outcome','')
     bw.end_date            = item.get('end_date','')
     bw.avg_price           = item.get('avg_price', 0)
-    # CLOB enriched data — accepting_orders tells us if market is still live
-    bw.accepting_orders    = item.get('accepting_orders', True)
-    # Detect and store categories for card tagging
-    cats_det, bw.best_cat, bw.conf_score = detect_categories_with_confidence(item.get('question',''))
-    bw.cats = cats_det
     bw.is_curated          = item.get('is_curated', False)
     bw.confidence          = item.get('conf_score', 0)  # keyword match count (0 = low/no match)
     bw.win_rate            = getattr(bw, 'win_rate', 0) or 0
@@ -1015,7 +759,7 @@ def _check_leaderboard_changes():
                 alerts.append('\U0001f6ab DROPPED: #' + str(pinfo['rank']) + ' | ' + (pinfo.get('name') or addr[:10]))
         if alerts:
             text = '\U0001f4cb LEADERBOARD UPDATE\n\n' + '\n\n'.join(alerts[:5])
-            send(CHANNELS['alert'], text)
+            send(CHANNELS['hub'], text)
             for addr, info in lb.items():
                 if addr in prev_raw:
                     prev_rank = prev_raw.get(addr, {}).get('rank', '?')
@@ -1141,75 +885,6 @@ def run():
     save_state(state)
     log.info(f'Done. Total sent: {state["total_sent"]}')
 
-# ═══════════════════════════════════════════════════════════════════
-# TOP PLAYS — AUTOROUTING FILTER
-# ═══════════════════════════════════════════════════════════════════
-# Criteria for auto-routing to Polyshark TOP PLAYS US:
-#   1. Wallet is in the top-tier list (100% WR, 50+ positions, verified P&L)
-#   2. Entry price < 50¢ (targets 100%+ potential ROI, not near-guaranteed snipes)
-#   3. Market is still open (not resolved)
-#   4. Not already sent to TOP_PLAYS this session
-#
-# Compounding sizing tiers (per position_sizer.py):
-#   Balance  $0-$5K   → cap $500/trade
-#   Balance  $5K-$20K  → cap $1,000/trade
-#   Balance  $20K-$50K → cap $2,500/trade
-#   Balance  $50K-$200K → cap $5,000/trade
-#   Balance  $200K+    → cap $10,000/trade
-#   Daily exposure cap: 25% of balance, split across open positions
-# ═══════════════════════════════════════════════════════════════════
-
-TOP_PLAYS_WALLETS = {
-    '0x492442eab586f242b53bda933fd5de859c8a3782': {'name': 'Whale A', 'wr': 100.0, 'positions': 200, 'pnl': 49_796_390},
-    '0x2a2c53bd278c04da9962fcf96490e17f3dfb9bc1': {'name': 'Whale B', 'wr': 100.0, 'positions': 200, 'pnl': 20_009_550},
-    '0x24c8cf69a0e0a17eee21f69d29752bfa32e823e1': {'name': 'Whale C', 'wr': 100.0, 'positions': 50,  'pnl': 17_467_534},
-    '0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee': {'name': 'Whale D', 'wr': 100.0, 'positions': 50,  'pnl': 16_867_771},
-    '0xfe787d2da716d60e8acff57fb87eb13cd4d10319': {'name': 'Whale E', 'wr': 100.0, 'positions': 5000,'pnl': 15_823_457},
-}
-
-TOP_PLAYS_WHITELIST = set(TOP_PLAYS_WALLETS.keys())
-
-TOP_PLAYS_CONFIG = {
-    'max_entry_price': 0.60,  # <60¢: <50¢ = high priority, 50-60¢ = secondary
-    'min_wr': 95.0,               # Wallet must have 95%+ lifetime WR
-    'require_30d_activity': True,  # Wallet must have traded in last 30 days
-}
-
-def is_top_play(bw, prof=None) -> bool:
-    """Return True if this signal qualifies for TOP PLAYS US channel.
-    
-    Criteria:
-    - Wallet has 95%+ lifetime WR AND 20+ lifetime positions
-      OR wallet is in the hardcoded TOP_PLAYS_WHITELIST (verified top-tier whales)
-    - Entry price < 60¢ (< 50¢ = high priority, 50-60¢ = secondary)
-    - Market is OPEN (not resolved — accepting_orders must be True)
-    """
-    wallet = (getattr(bw, 'wallet', '') or '').lower()
-    if not wallet:
-        return False
-    
-    # Must be open market — skip resolved/settled positions
-    if getattr(bw, 'accepting_orders', True) is not True:
-        return False
-    
-    # Check entry price — must be below 60¢
-    entry_px = float(getattr(bw, 'avg_price', 0) or 0)
-    if entry_px == 0 or entry_px >= TOP_PLAYS_CONFIG['max_entry_price']:
-        return False
-    
-    # Hardcoded top-tier whales (100% WR, verified P&L)
-    if wallet in TOP_PLAYS_WHITELIST:
-        return True
-    
-    # Dynamic check: wallet must have 95%+ WR and 20+ positions for TOP PLAYS
-    if prof:
-        wr = getattr(prof, 'win_rate', 0) or 0
-        pos = getattr(prof, 'total_positions', 0) or 0
-        if wr >= TOP_PLAYS_CONFIG['min_wr'] and pos >= 20:
-            return True
-    
-    return False
-
 if __name__ == '__main__':
     import time as _time
     log.info('Starting Polyshark Router daemon loop')
@@ -1220,4 +895,3 @@ if __name__ == '__main__':
             continue
         run()
         _time.sleep(120)  # 2 min router poll interval
-

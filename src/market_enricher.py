@@ -18,7 +18,7 @@ def get_market_info(market_id: str) -> Optional[dict]:
         log.warning(f"CLOB fetch failed for {market_id}: {e}")
         return None
 
-def validate_and_enrich(bw) -> Optional[dict]:
+def validate_and_enrich(bw):
     """
     Validate a big win against CLOB API.
     Returns None (reject) or enriched dict with validated fields.
@@ -31,12 +31,9 @@ def validate_and_enrich(bw) -> Optional[dict]:
 
     info = get_market_info(market_id)
     if not info:
-        return None  # can't validate — let it through (fail open)
+        return None  # can't validate — fail open
 
     now = datetime.now(timezone.utc)
-
-    # NOTE: game_start_time check removed — too strict for short-duration markets
-    # NOTE: closed=True check removed — historical closed markets flow through per Jeff
 
     # REJECT if ts_opened is in the future (bad data — Polymarket API glitch)
     ts_opened = getattr(bw, 'timestamp', None)
@@ -49,13 +46,83 @@ def validate_and_enrich(bw) -> Optional[dict]:
         except (ValueError, TypeError, OSError):
             pass
 
-    # Enrich with real data
+    # Extract YES and NO token prices for current pricing context
+    tokens = info.get('tokens', []) or []
+    yes_price = None
+    no_price = None
+    yes_outcome = None
+    no_outcome = None
+    winner = ''
+    for t in tokens:
+        p = float(t.get('price', 0) or 0)
+        o = str(t.get('outcome', '') or '')
+        w = bool(t.get('winner', False))
+        if p > 0.5:  # YES side
+            yes_price = p
+            yes_outcome = o
+        else:       # NO side
+            no_price = p
+            no_outcome = o
+        if w:
+            winner = o
+
+    game_start = info.get('game_start_time', '') or ''
+
+    # Format game start time → "Sun 11:10 PM UTC"
+    start_fmt = ''
+    if game_start:
+        try:
+            dt = datetime.fromisoformat(game_start.replace('Z', '+00:00')).replace(tzinfo=timezone.utc)
+            start_fmt = dt.strftime('%a %-I:%M %p %Z')
+        except Exception:
+            start_fmt = game_start[:16]
+
+    # Format slug → "MLB · KC vs CIN · 06/01"
+    slug_raw = info.get('market_slug', '') or ''
+    slug_parts = slug_raw.replace('-', ' ').split()
+    if len(slug_parts) >= 6:
+        slug_fmt = f"{slug_parts[0].upper()} · {slug_parts[1].upper()} vs {slug_parts[2].upper()} · {slug_parts[4]}/{slug_parts[5]}"
+    else:
+        slug_fmt = slug_raw.replace('-', ' ')
+
+    # Determine geo-availability from CLOB signals:
+    # - neg_risk=True → Neg Risk market (US-accessible via CLOB) = GLOBAL
+    # - neg_risk=False → standard Polyshark market, check slug pattern
+    is_neg_risk = bool(info.get('neg_risk', False))
+    accepting = bool(info.get('accepting_orders', False))
+
+    slug_lower = slug_raw.lower()
+    global_slugs = ['nba', 'nfl', 'nhl', 'mlb', 'ncaa', 'ufc', 'tennis', 'golf',
+                    'soccer', 'f1', 'formula', 'mma', 'boxing', 'cricket',
+                    'rugby', 'world series', 'playoffs', 'championship']
+    us_only_slugs = ['bitcoin', 'eth', 'solana', 'nft', 'defi',
+                     '$aapl', '$tsla', '$nvda', 'stock ticker', 'spot etf',
+                     'bitcoin etf', 'ethereum etf']
+
+    if is_neg_risk:
+        geo_available = 'GLOBAL'  # Neg Risk markets are US-accessible
+    elif any(g in slug_lower for g in global_slugs):
+        geo_available = 'GLOBAL'  # Sports leagues = globally available
+    elif any(g in slug_lower for g in us_only_slugs):
+        geo_available = 'NON_US_ONLY'  # Finance/crypto markets = geo-restricted
+    else:
+        geo_available = 'GLOBAL'  # Default: open CLOB markets are global
+
     return {
         'market_id': market_id,
         'question': info.get('question', ''),
-        'game_start_time': info.get('game_start_time', ''),
+        'game_start_time': game_start,
+        'game_start_fmt': start_fmt,
         'closed': info.get('closed', False),
-        'accepting_orders': info.get('accepting_orders', False),
-        'tokens': info.get('tokens', []),
-        'winner': next((t.get('outcome','') for t in info.get('tokens',[]) if t.get('winner')), ''),
+        'accepting_orders': accepting,
+        'neg_risk': is_neg_risk,
+        'tokens': tokens,
+        'winner': winner,
+        'yes_price': yes_price,
+        'no_price': no_price,
+        'yes_outcome': yes_outcome,
+        'no_outcome': no_outcome,
+        'market_slug': slug_fmt,
+        'description': (info.get('description') or '')[:300],
+        'geo_available': geo_available,
     }

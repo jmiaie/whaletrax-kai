@@ -189,7 +189,7 @@ class WalletProfile:
             self._last_seen_ts = max(self._last_seen_ts, ts)
 
         # Keep history bounded (last 500 positions — enough for 6m+ coverage)
-        self._pos_history = sorted(self._pos_history, key=lambda x: x['ts'], reverse=True)[:500]
+        self._pos_history = sorted(self._pos_history, key=lambda x: x["ts"], reverse=True)[:5000]
 
         # Recalculate all aggregates from complete history
         self._recalculate()
@@ -213,7 +213,11 @@ class WalletProfile:
         if self._positions_30d > 0:
             self._pnl_30d = raw_pnl_30d
             self._pnl_30d_anchor = raw_pnl_30d  # anchor whenever window is live
-        elif self._total_positions > 0 and self._pnl_30d_anchor != 0:
+        elif self._total_positions > 0:
+            # Window shifted past all positions — zero out P/L (no recent activity)
+            self._pnl_30d = 0.0
+            self._pnl_30d_anchor = 0.0  # clear stale anchor
+        elif self._pnl_30d_anchor != 0:
             self._pnl_30d = self._pnl_30d_anchor  # restore last known when window shifted past
 
         self._positions_90d = sum(1 for p in self._pos_history if p['ts'] >= cutoff_90d)
@@ -248,6 +252,9 @@ class WalletProfile:
             'total_positions': self._total_positions,
             'total_wins': self._total_wins,
             '_wins_30d': self._wins_30d,
+            '_pos_30d': self._positions_30d,
+            '_pos_90d': self._positions_90d,
+            '_pos_6m': self._positions_6m,
             'losses': self._losses,
             'win_rate': round(self.win_rate, 1),
             'win_rate_30d': round(self.win_rate_30d, 1),
@@ -262,7 +269,7 @@ class WalletProfile:
             'first_seen': self.first_seen,
             'last_seen_ts': self._last_seen_ts,
             'updated_at': self.updated_at,
-            '_pos_history': self._pos_history[-200:],  # last 200 for persistence
+            '_pos_history': self._pos_history[-5000:] if len(self._pos_history) >= 5000 else self._pos_history,  # last up to 5000  # last up to 5000 positions for persistence
             '_seen_ids': list(self._seen_ids),         # persist dedupe set
         }
 
@@ -276,6 +283,11 @@ class WalletProfile:
         p.updated_at   = d.get('updated_at', '')
         p._cache_valid        = False
         p._pnl_30d_anchor     = d.get('pnl_30d_anchor', 0.0)
+        p._positions_30d      = d.get('_pos_30d', 0)
+        p._positions_90d      = d.get('_pos_90d', 0)
+        p._positions_6m       = d.get('_pos_6m', 0)
+        # Recalculate all aggregates from _pos_history so cached stats are accurate
+        p._recalculate()
         return p
 
 # ── Global profile cache ───────────────────────────────────────────────────
@@ -285,7 +297,12 @@ _last_load: Optional[float] = None
 _CACHE_TTL = 60  # seconds before reloading from disk
 
 def load_profiles() -> dict[str, WalletProfile]:
-    """Load all wallet profiles from disk, with 60s cache."""
+    """Load all wallet profiles from disk, with 60s cache.
+    
+    Note: Does NOT call _maybe_refresh here — that is only triggered on-demand
+    for specific wallets via get_profile(wallet, min_fresh=True). Calling it for
+    all 528 wallets on every load would cause API spam and race conditions.
+    """
     global _profiles, _last_load
     import time
     now = time.time()
@@ -324,7 +341,6 @@ def get_profile(wallet: str, min_fresh: bool = False) -> WalletProfile:
     if wallet not in profiles:
         profiles[wallet] = WalletProfile(wallet)
     p = profiles[wallet]
-    p._recalculate()
     if min_fresh:
         _maybe_refresh(p)
     return p
@@ -347,14 +363,16 @@ def _maybe_refresh(p: WalletProfile):
     try:
         if time.time() - getattr(p, '_last_api_fetch', 0) < PROFILE_STALE_TTL:
             return
-        closed = pm.get_user_closed_positions(p.wallet, limit=500)
+        closed = pm.get_user_closed_positions(p.wallet, limit=5000)
         # Only merge if API returned actual data; don't overwrite existing stats with silence
         if closed:
             p.merge_positions(closed)
             p._last_api_fetch = time.time()
-            save_profiles(load_profiles())
+            # Don't save here — _maybe_refresh is a background thread.
+            # The calling context (update_profile / scan_big_wins) owns the save.
         else:
-            # Stamp so we don't re-query on every card call
+            # Empty refresh — stamp only. Don't call merge_positions (it would
+            # re-sort/truncate _pos_history on every access).
             p._last_api_fetch = time.time()
     except Exception:
         pass

@@ -57,29 +57,33 @@ def _get(url: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any] | 
         return None
 
 
-def _paginate(url: str, params: dict[str, Any], key: Optional[str] = None) -> list[dict[str, Any]]:
+def _paginate(url: str, params: dict[str, Any], key: Optional[str] = None,
+               max_records: Optional[int] = None) -> list[dict[str, Any]]:
     """
-    Fetch all pages from a paginated endpoint.
+    Fetch ALL pages from a paginated endpoint.
 
-    Stops when fewer results than `limit` are returned or `MAX_PAGES` is hit.
-    If *key* is provided the response is expected to be a dict and the list
-    lives at ``response[key]``; otherwise the response itself must be a list.
+    Polymarket caps at 50 items/page regardless of limit param.
+    Loops until page < 50 items, MAX_PAGES (200), or max_records cap.
     """
     results: list[dict[str, Any]] = []
     offset = 0
-    limit = params.get("limit", config.DEFAULT_PAGE_LIMIT)
+    hard_cap = max_records or config.MAX_RECORDS_PER_QUERY
     for page in range(config.MAX_PAGES):
-        params["offset"] = offset
-        data = _get(url, params)
+        page_params = {**params, "offset": offset, "limit": config.DEFAULT_PAGE_LIMIT}
+        data = _get(url, page_params)
         if data is None:
             break
         page_items: list[dict[str, Any]] = data[key] if key else data
-        if not isinstance(page_items, list):
+        if not isinstance(page_items, list) or not page_items:
             break
         results.extend(page_items)
-        if len(page_items) < limit:
+        if len(page_items) < config.DEFAULT_PAGE_LIMIT:
+            # Partial page = end of data
             break
-        offset += limit
+        if len(results) >= hard_cap:
+            results = results[:hard_cap]
+            break
+        offset += config.DEFAULT_PAGE_LIMIT
     return results
 
 
@@ -134,19 +138,17 @@ def get_user_positions(wallet: str) -> list[dict[str, Any]]:
     return []
 
 
-def get_user_closed_positions(wallet: str, limit: int = 1000) -> list[dict[str, Any]]:
-    """Return ALL closed/resolved positions for *wallet*, paginating through all pages.
+def get_user_closed_positions(wallet: str, limit: int = 5000) -> list[dict[str, Any]]:
+    """Return ALL closed/resolved positions for *wallet*, paginating all pages.
     
-    Polymarket API caps at 50 positions per request regardless of limit.
-    Uses limit=50 internally per page to ensure _paginate continues (50 < 50 is False).
+    Polymarket API caps at 50 items/page. Loops up to MAX_PAGES (200) or *limit*,
+    whichever comes first. Default 5000, hard cap 10000 from config.
+    Results sorted oldest-first internally by the API.
     """
-    url = f"{config.DATA_API_BASE}/closed-positions"
-    # Internal page size of 50 ensures pagination continues (50 < 50 == False)
-    params: dict[str, Any] = {"user": wallet, "limit": 50}
-    raw = _paginate(url, params)
-    # Some API versions wrap under "positions"
-    if raw and isinstance(raw[0], dict) and "positions" in raw[0]:
-        return raw[0]["positions"]
+    url = f"{config.DATA_API_BASE}/v1/closed-positions"
+    params: dict[str, Any] = {"user": wallet}
+    max_r = min(limit, config.MAX_RECORDS_PER_QUERY)
+    raw = _paginate(url, params, max_records=max_r)
     return raw
 
 
