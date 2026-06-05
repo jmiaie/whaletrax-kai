@@ -693,6 +693,12 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
     lines += [
         '————————————————————————',
         market,
+    ]
+    # Add event link (georestricted markets won't have valid links, but try anyway)
+    market_id = getattr(bw, 'market_id', '') or ''
+    if market_id:
+        lines.append(f'🔗 https://polymarket.com/event/{market_id}')
+    lines += [
         '————————————————————————',
         profit,
         size_line,
