@@ -189,13 +189,16 @@ def _get_internal_whale_records(top_n: int | None = None) -> list[WalletStats]:
     import sqlite3
     from pathlib import Path
     db_path = Path(__file__).resolve().parents[1] / 'wallet_tracker.db'
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    q = 'SELECT wallet_address, display_name, lifetime_pnl, lifetime_wr, wr_30d, pnl_30d, total_trades, wins, losses, avg_roi, best_roi_trade, streak_current, streak_best, last_seen, updated_at, is_active FROM internal_whale_wallets ORDER BY lifetime_pnl DESC, lifetime_wr DESC, total_trades DESC'
-    if top_n:
-        q += f' LIMIT {int(top_n)}'
-    rows = conn.execute(q).fetchall()
-    conn.close()
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        q = 'SELECT wallet_address, display_name, lifetime_pnl, lifetime_wr, wr_30d, pnl_30d, total_trades, wins, losses, avg_roi, best_roi_trade, streak_current, streak_best, last_seen, updated_at, is_active FROM internal_whale_wallets ORDER BY lifetime_pnl DESC, lifetime_wr DESC, total_trades DESC'
+        if top_n:
+            q += f' LIMIT {int(top_n)}'
+        rows = conn.execute(q).fetchall()
+        conn.close()
+    except Exception:
+        return []
     out = []
     for idx, r in enumerate(rows, start=1):
         s = WalletStats(wallet=r['wallet_address'], display_name=r['display_name'] or '', total_profit_usdc=float(r['lifetime_pnl'] or 0), total_trades=int(r['total_trades'] or 0), rank=idx)
