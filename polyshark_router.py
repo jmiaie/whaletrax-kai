@@ -694,10 +694,6 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
         '————————————————————————',
         market,
     ]
-    # Add event link (georestricted markets won't have valid links, but try anyway)
-    market_id = getattr(bw, 'market_id', '') or ''
-    if market_id:
-        lines.append(f'🔗 https://polymarket.com/event/{market_id}')
     lines += [
         '————————————————————————',
         profit,
@@ -722,6 +718,10 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
         '————————————————————————',
         trader,
     ]
+    # Event link last = Telegram link preview shows the play/market, not the wallet
+    market_id = getattr(bw, 'market_id', '') or ''
+    if market_id:
+        lines.append(f'🔗 https://polymarket.com/event/{market_id}')
     # geo tag is now in the header — no need to repeat at footer
     return '\n'.join(lines)
 def process_queue(state):
