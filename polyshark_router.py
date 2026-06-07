@@ -441,8 +441,16 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
         is_open = bool(_clob_accepting) if _clob_accepting is not None else (float(entry_px) < 1.0)
 
     is_resolved = not is_open
+    # Use roi_pct and profit_usdc from the scan (computed from cashPnl and curPrice for open,
+    # from realized P&L for closed). Do NOT recompute from entry price — that produces
+    # wrong values for open positions where the whale's outcome price ≠ market price.
+    # Only recompute for closed positions where we have no pre-computed value.
     if is_open:
-        roi_pct = (1.0 / entry_px - 1) * 100
+        pass  # use scan-computed roi_pct and profit_usdc as-is
+    else:
+        # Closed position: derive from entry vs settlement
+        if roi_pct == 0 and entry_px > 0 and entry_px < 1.0:
+            roi_pct = (1.0 / entry_px - 1) * 100
         if trade_size > 0:
             profit_usdc = (trade_size / entry_px) - trade_size
 
@@ -541,10 +549,14 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
         bet = f'🎯 ⬆️ BET {side}' if side == 'YES' else f'🎯 ⬇️ BET {side}'
 
     # Add current market price context to bet line for open trades
-    if is_open and getattr(bw, 'current_price', 0) > 0:
-        # Show entry vs current price to highlight unrealized gain
+    # For open positions: show the whale's current outcome price as "Now:"
+    # Prefer the enriched CLOB yes_price (fresher) over scan-time current_price
+    # For YES bets: yes_price = whale's outcome price
+    # For NO bets: use current_price (whale's NO outcome price)
+    now_price = getattr(bw, 'yes_price', 0) or getattr(bw, 'current_price', 0)
+    if is_open and now_price > 0:
         entry_pct = entry_px * 100
-        cur_pct = getattr(bw, 'current_price', 0) * 100
+        cur_pct = now_price * 100
         bet += f' | Now: {cur_pct:.1f}¢'
 
     size_line = f'💵 ${trade_size:,.0f} position | Entry: {entry_px*100:.1f}¢'
