@@ -550,14 +550,19 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
 
     # Add current market price context to bet line for open trades
     # For open positions: show the whale's current outcome price as "Now:"
-    # Prefer the enriched CLOB yes_price (fresher) over scan-time current_price
-    # For YES bets: yes_price = whale's outcome price
-    # For NO bets: use current_price (whale's NO outcome price)
-    now_price = getattr(bw, 'yes_price', 0) or getattr(bw, 'current_price', 0)
-    if is_open and now_price > 0:
-        entry_pct = entry_px * 100
-        cur_pct = now_price * 100
-        bet += f' | Now: {cur_pct:.1f}¢'
+    # YES bet → show YES price. NO bet → show NO price.
+    # Never show the opposite outcome's price (which was the previous bug).
+    side_raw = str(getattr(bw, 'outcome', '') or '').upper()
+    side = 'YES' if side_raw not in ('DOWN', 'NO') else 'NO'
+    if is_open:
+        if side == 'YES':
+            now_price = getattr(bw, 'yes_price', 0) or getattr(bw, 'current_price', 0)
+        else:
+            now_price = getattr(bw, 'no_price', 0) or getattr(bw, 'current_price', 0)
+        if now_price > 0:
+            entry_pct = entry_px * 100
+            cur_pct = now_price * 100
+            bet += f' | Now: {cur_pct:.1f}¢'
 
     size_line = f'💵 ${trade_size:,.0f} position | Entry: {entry_px*100:.1f}¢'
     roi_label = 'potential ROI' if is_open else 'ROI'
