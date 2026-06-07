@@ -98,22 +98,27 @@ def _open_position_to_big_win(
     if not timestamp:
         timestamp = int(_safe_float(raw.get("eventStartDate") or 0))
 
-    # Current price: prefer curPrice from position data (authoritative — it's the
-    # whale's own outcome's current price). CLOB 'tokens' approach fails for
-    # team-name markets where outcomes are team names, not "Yes"/"No".
-    # CLOB fallback is only used when curPrice is 0/unavailable.
+    # current_price = curPrice from position data (authoritative)
+    # For YES outcomes: curPrice = YES price (whale's outcome price)
+    # For NO outcomes: curPrice = NO price (whale's outcome price)
     cur_price_raw = _safe_float(raw.get('curPrice') or 0)
     if cur_price_raw > 0:
         current_price = cur_price_raw
-    # else use the CLOB-fetched current_price parameter (may be 0 for team markets)
+    # else use the CLOB-fetched current_price parameter
 
-    # roi_pct based on current_price vs entry (unrealized gain so far)
+    # roi_pct: correctly handles both YES and NO outcomes
+    # YES: (curPrice - avgPrice) / avgPrice  ->  (0.0155 - 0.5) / 0.5 = -96.9%
+    # NO:  (curPrice - avgPrice) / avgPrice  ->  (0.55 - 0.45) / 0.45 = +22.2%
     roi_pct = 0.0
     if current_price > 0 and avg_price > 0:
         roi_pct = ((current_price - avg_price) / avg_price) * 100
 
-    # unrealized P&L = (current_price - avg_price) * size
-    unrealized_pnl = (current_price - avg_price) * size if current_price > 0 else cash_pnl
+    # unrealized_pnl = cashPnl from API (authoritative actual P&L)
+    unrealized_pnl = _safe_float(raw.get('cashPnl') or 0)
+
+    # profit_usdc for open positions = actual unrealized P&L (cashPnl), NOT cost basis
+    # cashPnl is negative when losing, positive when winning — this drives the display sign
+    profit_usdc = unrealized_pnl
 
     # outcome: derive YES/NO from avgPrice
     raw_outcome = raw.get("outcome") or ""
@@ -134,8 +139,8 @@ def _open_position_to_big_win(
         display_name=display_name,
         market_question=question,
         outcome=outcome,
-        profit_usdc=cost,           # cost basis as "profit_usdc" for open positions
-        roi_pct=roi_pct,            # unrealized ROI vs current CLOB price
+        profit_usdc=profit_usdc,  # cashPnl for open positions (actual P&L)
+        roi_pct=roi_pct,            # unrealized ROI vs current price
         trade_size_usdc=cost,
         timestamp=timestamp,
         market_id=market_id,
