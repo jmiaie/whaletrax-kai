@@ -1286,6 +1286,8 @@ def run():
             'is_full_pro':    True,
             'is_open':        getattr(bw, 'is_open', True),
             'current_price':  getattr(bw, 'current_price', 0),
+            'yes_price':      getattr(bw, 'yes_price', 0),
+            'no_price':       getattr(bw, 'no_price', 0),
             'unrealized_pnl': getattr(bw, 'unrealized_pnl', 0),
             'percentPnl':     getattr(bw, 'percentPnl', 0),
             'redeemable':     getattr(bw, 'redeemable', False),
