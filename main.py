@@ -41,6 +41,8 @@ from src.wallethound.display import (
 )
 from src.wallethound import consistent_winners as cw
 from src.wallethound import compounders as comp
+from src import lockins_detector as lockins
+from src import lockins_display as lockins_display
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -489,6 +491,100 @@ def wallethound_web_cmd(port: int, debug: bool) -> None:
 
     print_info(f"Starting WalletHound web dashboard on http://localhost:{port}")
     flask_app.run(host="0.0.0.0", port=port, debug=debug)
+
+
+# ── LockIns commands ──────────────────────────────────────────────────────────
+
+@cli.group("lockins")
+def lockins_group() -> None:
+    """🎯 LockIns — price-bucket sniper tracking for Polyshark."""
+
+
+@lockins_group.command("scan")
+@click.option(
+    "--pass",
+    "tier",
+    default="all",
+    type=click.Choice(["all", "overall", "penny", "nickel"], case_sensitive=False),
+    help="Which pass to run. 'all' runs all three.",
+)
+@click.option(
+    "--top",
+    default=150,
+    show_default=True,
+    help="Number of wallets per tier.",
+    type=click.IntRange(1, 150),
+)
+@click.option(
+    "--delta/--full",
+    default=False,
+    show_default=True,
+    help="Delta mode: only fetch new records since last run.",
+)
+def lockins_scan_cmd(tier: str, top: int, delta: bool) -> None:
+    """Run LockIns scan pass(es). Use --delta for incremental updates."""
+    if delta:
+        print_info("Running LockIns delta scan (new records only)…")
+        output = lockins.run_delta_scan(top_n=top)
+    else:
+        print_info("Running LockIns full backfill scan…")
+        output = lockins.run_full_scan(top_n=top)
+
+    for t, results in output.items():
+        if tier != "all" and t != tier:
+            continue
+        tier_label = {"overall": "🏆 Overall", "penny": "🪙 Penny", "nickel": "🪙 Nickel"}.get(t, t)
+        print_info(f"{tier_label}: {len(results)} qualifying wallets")
+        lockins_display.show_lockins_table(results, tier=t, top_n=top)
+
+
+@lockins_group.command("backfill")
+@click.option(
+    "--top",
+    default=150,
+    show_default=True,
+    help="Number of wallets per tier.",
+    type=click.IntRange(1, 150),
+)
+def lockins_backfill_cmd(top: int) -> None:
+    """Full backfill of all three LockIns passes — use once to seed the DB."""
+    print_info(f"Running LockIns full backfill (top {top} wallets per tier)…")
+    output = lockins.run_full_scan(top_n=top)
+    for t, results in output.items():
+        tier_label = {"overall": "🏆 Overall", "penny": "🪙 Penny", "nickel": "🪙 Nickel"}.get(t, t)
+        print_info(f"{tier_label}: {len(results)} wallets stored")
+        lockins_display.show_lockins_table(results, tier=t, top_n=top)
+
+
+@lockins_group.command("status")
+def lockins_status_cmd() -> None:
+    """Show last-run timestamps for all LockIns tiers."""
+    state = lockins.get_run_state()
+    lockins_display.show_run_state(state)
+
+
+@lockins_group.command("wallet")
+@click.argument("wallet")
+def lockins_wallet_cmd(wallet: str) -> None:
+    """Show LockIns profile for a single wallet across all tiers."""
+    from src.wallethound.scanner import hound_wallet
+
+    results = {"penny": None, "nickel": None, "overall": None}
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+        console=console,
+    ) as progress:
+        for tier in lockins.ALL_TIERS:
+            progress.add_task(f"Fetching {tier} data for {wallet[:14]}…", total=None)
+            top = lockins.get_top_wallets(tier, top_n=150)
+            match = next((r for r in top if r.wallet.lower() == wallet.lower()), None)
+            if match:
+                results[tier] = match
+
+    lockins_display.show_wallet_lockins_profile(results)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

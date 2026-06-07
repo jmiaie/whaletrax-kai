@@ -41,7 +41,7 @@ FREE_DELAY = timedelta(seconds=FREE_ALERT_DELAY_SECONDS)
 CURATED_DELAY = timedelta(minutes=5)  # curated forward delay
 MAX_CURATED  = 4
 CAT_DELAY    = timedelta(minutes=10)
-PRO_ALERT_DELAY_SECONDS = int(os.environ.get('POLYSHARK_PRO_DELAY_SECONDS', '10'))  # env override: POLYSHARK_PRO_DELAY_SECONDS
+PRO_ALERT_DELAY_SECONDS = int(os.environ.get('POLYSHARK_PRO_DELAY_SECONDS', '0'))  # 0 = fire immediately
 PRO_DELAY    = timedelta(seconds=PRO_ALERT_DELAY_SECONDS)
 SEND_PAUSE   = 45
 MIN_PROFIT   = 500
@@ -430,7 +430,17 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
     trade_size = float(getattr(bw, 'trade_size_usdc', 0) or 0)
     profit_usdc = float(getattr(bw, 'profit_usdc', 0) or 0)
     roi_pct = float(getattr(bw, 'roi_pct', 0) or 0)
-    is_open = float(getattr(bw, "avg_price", 0) or 0) < 1.0
+    # is_open: use explicit flag from open-position scan, falling back to
+    # accepting_orders (CLOB) and then the avg_price heuristic as last resort.
+    _explicit_open = getattr(bw, 'is_open', None)
+    if _explicit_open is not None:
+        is_open = bool(_explicit_open)
+    else:
+        # Legacy path: closed-position items have no is_open flag
+        _clob_accepting = getattr(bw, 'accepting_orders', True)
+        is_open = bool(_clob_accepting) if _clob_accepting is not None else (float(entry_px) < 1.0)
+
+    is_resolved = not is_open
     if is_open:
         roi_pct = (1.0 / entry_px - 1) * 100
         if trade_size > 0:
@@ -531,12 +541,11 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
         bet = f'🎯 ⬆️ BET {side}' if side == 'YES' else f'🎯 ⬇️ BET {side}'
 
     # Add current market price context to bet line for open trades
-    if is_open and yes_price is not None:
+    if is_open and getattr(bw, 'current_price', 0) > 0:
         # Show entry vs current price to highlight unrealized gain
         entry_pct = entry_px * 100
-        cur_pct = (yes_price * 100) if side == 'YES' else (no_price * 100 if no_price else 0)
-        if cur_pct > 0:
-            bet += f' | Now: {cur_pct:.1f}¢'
+        cur_pct = getattr(bw, 'current_price', 0) * 100
+        bet += f' | Now: {cur_pct:.1f}¢'
 
     size_line = f'💵 ${trade_size:,.0f} position | Entry: {entry_px*100:.1f}¢'
     roi_label = 'potential ROI' if is_open else 'ROI'
@@ -753,6 +762,25 @@ def process_queue(state):
                 dirty = True
                 continue
 
+            # Drop resolved items: check is_open flag and endDate
+            # A resolved market has: redeemable=true, percentPnl=-100, or endDate in the past
+            item_is_open = item.get('is_open', True)
+            item_end = item.get('end_date', '')
+            item_pct_pnl = float(item.get('percentPnl', 0) or 0)
+            item_redeemable = item.get('redeemable', False)
+            today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            is_resolved_item = (
+                item_is_open is False
+                or item_redeemable is True
+                or item_pct_pnl <= -99
+                or (item_end and item_end < today_str)
+            )
+            if is_resolved_item:
+                log.info(f'PRO filtered (resolved market): {item["question"][:40]}')
+                item['pro_sent'] = True
+                dirty = True
+                continue
+
             # CLOB validation for queued items (check once per item)
             if not item.get('_clob_validated'):
                 try:
@@ -782,14 +810,8 @@ def process_queue(state):
             if not getattr(bw, 'geo_available', None):
                 bw.geo_available = item.get('geo_available', 'UNKNOWN')
             # Final check before sending: skip fully resolved cards (yes_price = $1.00)
-            # These show as "✅ RESOLVED" cards only when the whale closes/settles the position
-            bw_yes_price = float(getattr(bw, 'yes_price', 0) or 0)
-            if bw_yes_price >= 0.995:
-                item['_fired_hash'] = item_hash
-                item['pro_sent'] = True
-                dirty = True
-                log.info(f'PRO filtered (fully resolved @ {bw_yes_price*100:.1f}¢): {item["question"][:40]}')
-                continue
+            # NOTE: removed hard block here — the resolved-check below handles this case
+            # by routing resolved cards to Alert Hub only (not PRO/TOP PLAYS)
 
             # Market resolved — skip PRO and TOP PLAYS entirely
             # Send as RESOLVED update only to Alert Hub (bots only)
@@ -814,6 +836,7 @@ def process_queue(state):
             if card:
                 ok_alert = send(CHANNELS['alert'], card)
                 ok_pro   = send(CHANNELS['pro'], card)
+                log.info(f'Send result — alert={ok_alert}, pro={ok_pro}: {item["question"][:40]}')
 
                 # Auto-route to TOP PLAYS US: top-tier wallets, entry < 60¢, market OPEN
                 # HARD GATE: resolved plays (accepting_orders=False) never go to TOP PLAYS
@@ -831,6 +854,27 @@ def process_queue(state):
                 except Exception as e:
                     log.warning(f'TOP PLAYS routing error: {e}')
 
+                # World channel: standalone high-WR probability filter
+                # Fires immediately (same time as PRO) for any wallet with WR >= 90% (lifetime OR 30D)
+                # Not gated by category — any qualifying wallet's card routes here
+                try:
+                    if not item.get('world_sent'):
+                        w_wallet = (getattr(bw, 'wallet', '') or '').lower()
+                        w_prof = get_profile(w_wallet, min_fresh=False) if w_wallet else None
+                        wr_lt = w_prof.win_rate  if w_prof else 0
+                        wr_30 = w_prof.win_rate_30d if w_prof else 0
+                        if wr_lt >= 90 or wr_30 >= 90:
+                            w_card = format_card(bw, 'pro', CHANNELS['world'])
+                            if w_card:
+                                ok_world = send(CHANNELS['world'], w_card)
+                                if ok_world:
+                                    item['world_sent'] = True
+                                    log.info(f'World channel fired (WR {wr_lt:.0f}%/{wr_30:.0f}%): {item["question"][:40]}')
+                                else:
+                                    item['world_sent'] = True
+                except Exception as e:
+                    log.warning(f'World routing error: {e}')
+
                 if ok_alert or ok_pro:
                     try:
                         from card_stats import ingest_card
@@ -846,12 +890,43 @@ def process_queue(state):
                 item['pro_sent'] = True
                 dirty = True
 
-        # Category routing is hub-only now.
-        # The Hub is the intake/router; no direct category sends from this daemon.
+        # Category routing: send to Sports (and other category channels) with 10-min delay
         if cat_ready and item.get('cat_sent') != item['cats']:
+            bw_cat = bw_from_item(item)
+            if bw_cat:
+                cats = item.get('cats', [])
+                for cat in cats:
+                    if cat == 'pro':
+                        continue
+                    channel_map = {
+                        'sports': CHANNELS.get('sports'),
+                        'esports': CHANNELS.get('sports'),  # esports → Sports (no separate esports channel)
+                        'crypto': CHANNELS.get('crypto'),
+                        'weather': CHANNELS.get('weather'),
+                        'politics': CHANNELS.get('politics'),
+                        'world': CHANNELS.get('world'),
+                        'econ': CHANNELS.get('econ'),
+                    }
+                    cat_channel = channel_map.get(cat)
+                    if cat_channel:
+                        try:
+                            # World channel filter: only send if EITHER lifetime WR >= 90% OR 30D WR >= 90%
+                            if cat == 'world':
+                                prof_w = get_profile(bw_cat.wallet, min_fresh=False) if getattr(bw_cat, 'wallet', None) else None
+                                wr_lt  = prof_w.win_rate  if prof_w else 0
+                                wr_30  = prof_w.win_rate_30d if prof_w else 0
+                                if wr_lt < 90 and wr_30 < 90:
+                                    log.info(f'World filtered (WR {wr_lt:.0f}%/{wr_30:.0f}% both below 90%): {item["question"][:40]}')
+                                    continue
+                            cat_card = format_card(bw_cat, 'pro', cat_channel)
+                            if cat_card:
+                                send(cat_channel, cat_card)
+                                log.info(f'Category [{cat}] fired: {item["question"][:40]}')
+                        except Exception as e:
+                            log.warning(f'Category [{cat}] send error: {e}')
             item['cat_sent'] = item['cats']
             dirty = True
-            log.info(f'Category routing deferred to Hub for: {item["question"][:40]}')
+            log.info(f'Category routing done for: {item["question"][:40]}')
 
         # ⚡ Free channel disabled during v2.0 rollout: Hub + PRO only.
         # ⚠️ Keep queued items for downstream review, but do not emit to free channels.
@@ -898,10 +973,25 @@ def process_queue(state):
 def bw_from_item(item):
     """Reconstruct a minimal object from queued item.
     
-    Note: We do NOT filter by end_date here — some markets are listed months ahead.
-    We show resolved markets as "✅ RESOLVED" cards so users see outcome/PnL.
-    The accepting_orders check in format_card determines if it's open or resolved.
+    CLOB-re-enriches the item if not already validated (for old queue items that
+    predate the enrichment step). This ensures accepting_orders, yes_price, etc.
+    are populated for TOP PLAYS gating and resolved-card handling.
     """
+    # Re-enrich via CLOB if not already done
+    if not item.get('_clob_validated'):
+        from src.market_enricher import validate_and_enrich
+        class _BW:
+            pass
+        _tmp = _BW()
+        _tmp.market_id = item.get('market_id', '')
+        try:
+            enriched = validate_and_enrich(_tmp)
+            if isinstance(enriched, dict):
+                item['_clob_enriched'] = {k: v for k, v in enriched.items() if k != 'market_id'}
+                item['_clob_validated'] = True
+        except Exception:
+            pass
+
     from datetime import datetime, timezone as _tz
 
     # Build a simple namespace object instead of a class
@@ -922,8 +1012,19 @@ def bw_from_item(item):
     bw.outcome             = item.get('outcome','')
     bw.end_date            = item.get('end_date','')
     bw.avg_price           = item.get('avg_price', 0)
-    # CLOB enriched data — accepting_orders tells us if market is still live
-    bw.accepting_orders    = item.get('accepting_orders', True)
+    bw.is_open             = item.get('is_open', False)   # True = open position, False = closed
+    bw.current_price       = item.get('current_price', 0) # CLOB price at detection time
+    bw.unrealized_pnl      = item.get('unrealized_pnl', 0) # mark-to-market P&L for open positions
+    bw.percentPnl          = item.get('percentPnl', 0)   # Polymarket position % P&L
+    bw.redeemable          = item.get('redeemable', False) # True = market resolved
+    # CLOB enriched data — use stored CLOB enrichment if available (from validate_and_enrich)
+    # This ensures accepting_orders, yes_price, geo_available are set correctly for TOP PLAYS gating
+    clob = item.get('_clob_enriched', {})
+    bw.accepting_orders    = clob.get('accepting_orders', item.get('accepting_orders', True))
+    bw.yes_price          = clob.get('yes_price', item.get('yes_price', 0))
+    bw.geo_available      = clob.get('geo_available', item.get('geo_available', 'UNKNOWN'))
+    bw.game_start_time    = clob.get('game_start_time', item.get('game_start_time', ''))
+    bw.market_slug       = clob.get('market_slug', item.get('market_slug', ''))
     # Detect and store categories for card tagging
     cats_det, bw.best_cat, bw.conf_score = detect_categories_with_confidence(item.get('question',''))
     bw.cats = cats_det
@@ -1049,15 +1150,24 @@ def run():
     # Check delay queues first
     process_queue(state)
 
-    # Poll for new wins
+    # ── PRIMARY: Scan OPEN positions (real-time entry detection) ───────────
+    # ── STATS:    Update profiles from closed positions (no cards emitted) ───
     try:
-        bws = bwd.scan_big_wins_from_leaderboard(top_n=POLL_TOP_N)
-        log.info(f'Polled {len(bws)} total big wins')
+        # Primary: open positions as live entry signals
+        bws_open = bwd.scan_open_positions(top_n=POLL_TOP_N)
+        log.info(f'Open positions scanned: {len(bws_open)}')
     except Exception as e:
-        log.error(f'Poll error: {e}')
-        return
+        log.error(f'Open-position scan error: {e}')
+        bws_open = []
 
-    new_bws = [bw for bw in bws if f'{bw.market_id}_{bw.wallet}' not in seen]
+    # Stats-only: closed positions update profiles (no card emission)
+    try:
+        bwd.scan_big_wins_from_leaderboard(top_n=POLL_TOP_N)
+    except Exception as e:
+        log.warning(f'Stats scan error: {e}')
+
+    # Filter to truly new (not seen) open positions
+    new_bws = [bw for bw in bws_open if f'{bw.market_id}_{bw.wallet}' not in seen]
     new_bws.sort(key=lambda bw: bw.timestamp or 0, reverse=True)
     new_bws = new_bws[:MAX_PER_RUN]
     log.info(f'New this run: {len(new_bws)}')
@@ -1067,17 +1177,21 @@ def run():
 
     queue = load_queue()
 
-    # ── CLOB Validation: reject closed/already-started markets ────────
+    # ── CLOB Validation: reject already-resolved markets ─────────────────────
     validated_bws = []
     for bw in new_bws:
+        # For open positions: validate market is still accepting orders
         enriched = validate_and_enrich(bw)
         if enriched is None:
-            log.info(f"CLOB rejected: {bw.market_id[:20]}...")
+            log.info(f'CLOB rejected (resolved/stale): {bw.market_id[:20]}...')
             continue
         validated_bws.append(bw)
     skipped = len(new_bws) - len(validated_bws)
     new_bws = validated_bws
-    log.info(f"CLOB validation: {len(new_bws)} passed, {skipped} rejected")
+    log.info(f'CLOB validation: {len(new_bws)} passed, {skipped} rejected')
+    if not new_bws:
+        save_state(state)
+        return
 
     for bw in new_bws:
         key   = f'{bw.market_id}_{bw.wallet}'
@@ -1094,9 +1208,28 @@ def run():
             'leaderboard_volume': bw.leaderboard_volume if hasattr(bw, 'leaderboard_volume') else 0,
             'win_rate': bw.win_rate if hasattr(bw, 'win_rate') else 0,
             'win_streak': bw.win_streak if hasattr(bw, 'win_streak') else 0,
-            'cats': cats, 'geo_available': geo_available
+            'cats': cats, 'geo_available': geo_available,
+            'is_open': getattr(bw, 'is_open', True),
+            'current_price': getattr(bw, 'current_price', 0),
+            'unrealized_pnl': getattr(bw, 'unrealized_pnl', 0),
+            'percentPnl': getattr(bw, 'percentPnl', 0),
+            'redeemable': getattr(bw, 'redeemable', False),
         }
         ingest_alert(bw_dict, cats[0])
+
+        # Enrich with CLOB data before queuing so yes_price/current_price are live
+        # This makes the "Now: X.X¢" line in format_card accurate at queue time
+        try:
+            enriched = validate_and_enrich(bw)
+            if enriched and isinstance(enriched, dict):
+                bw.yes_price = enriched.get('yes_price', bw.current_price)
+                bw.no_price  = enriched.get('no_price', 0)
+                bw.accepting_orders = enriched.get('accepting_orders', True)
+                bw.game_start_fmt = enriched.get('game_start_fmt', '')
+                bw.market_slug = enriched.get('market_slug', '')
+                bw.geo_available = enriched.get('geo_available', 'UNKNOWN')
+        except Exception as e:
+            log.warning(f'CLOB pre-enrich error: {e}')
 
         # Queue for sequential forwarding
         is_curated = _is_curated_pick(bw, state)
@@ -1119,19 +1252,25 @@ def run():
             'total_positions':      getattr(bw, 'total_positions', 0),
             'wins_lt':              getattr(bw, 'wins_lt', 0),
             'wins_30d':             getattr(bw, 'wins_30d', 0),
-            'pos_lt':              getattr(bw, 'pos_lt', 0),   # lifetime position count
-            'pos_30d':             getattr(bw, 'pos_30d', 0),   # actual 30d position count
+            'pos_lt':              getattr(bw, 'pos_lt', 0),
+            'pos_30d':             getattr(bw, 'pos_30d', 0),
             'win_streak':           getattr(bw, 'win_streak', 0),
             'cats':          cats,
-            'best_cat':      best_cat,  # single highest-confidence category
+            'best_cat':      best_cat,
             'geo_available': geo_available,
-            'conf_score':     conf_score,  # keyword match count for confidence display
+            'conf_score':     conf_score,
             'cat_sent':      None,
             'pro_sent':       False,
             'free_sent':     False,
+            'world_sent':    False,
             'queued_at':     datetime.now(timezone.utc).isoformat(),
             'is_curated':    is_curated,
-            'is_full_pro':    True
+            'is_full_pro':    True,
+            'is_open':        getattr(bw, 'is_open', True),
+            'current_price':  getattr(bw, 'current_price', 0),
+            'unrealized_pnl': getattr(bw, 'unrealized_pnl', 0),
+            'percentPnl':     getattr(bw, 'percentPnl', 0),
+            'redeemable':     getattr(bw, 'redeemable', False),
         })
         if is_curated:
             state['curated_sent'] = state.get('curated_sent', 0) + 1
@@ -1139,7 +1278,7 @@ def run():
 
         seen.add(key)
         state['total_sent'] += 1
-        log.info(f'Queued: {bw.market_question[:50]} -> cats={cats} | curated in {CURATED_DELAY} | free in {FREE_DELAY}')
+        log.info(f'Queued [OPEN]: {bw.market_question[:50]} | size=${bw.trade_size_usdc:,.0f} | entry={bw.avg_price*100:.1f}¢ | cats={cats}')
 
     save_queue(queue)
     state['seen_keys'] = list(seen)[-1000:]
@@ -1166,6 +1305,7 @@ def run():
 # ═══════════════════════════════════════════════════════════════════
 
 TOP_PLAYS_WALLETS = {
+    '0x63a51cbb37341837b873bc29d05f482bc2988e33': {'name': 'C1 Whale', 'wr': 85.3, 'positions': 9999, 'pnl': 4_399_805},  # Jeff's #2 Polymarket — high-freq winning whale
     '0x492442eab586f242b53bda933fd5de859c8a3782': {'name': 'Whale A', 'wr': 100.0, 'positions': 200, 'pnl': 49_796_390},
     '0x2a2c53bd278c04da9962fcf96490e17f3dfb9bc1': {'name': 'Whale B', 'wr': 100.0, 'positions': 200, 'pnl': 20_009_550},
     '0x24c8cf69a0e0a17eee21f69d29752bfa32e823e1': {'name': 'Whale C', 'wr': 100.0, 'positions': 50,  'pnl': 17_467_534},
@@ -1194,24 +1334,25 @@ def is_top_play(bw, prof=None) -> bool:
     if not wallet:
         return False
     
-    # Must be open market — skip resolved/settled positions
-    if getattr(bw, 'accepting_orders', True) is not True:
-        return False
-    
     # Check entry price — must be below 60¢
     entry_px = float(getattr(bw, 'avg_price', 0) or 0)
     if entry_px == 0 or entry_px >= TOP_PLAYS_CONFIG['max_entry_price']:
         return False
     
-    # Hardcoded top-tier whales (100% WR, verified P&L)
+    # Hardcoded top-tier whales (100% WR, verified P&L) — bypass market-open check
+    # These whales go to TOP PLAYS regardless of market status since they're verified
     if wallet in TOP_PLAYS_WHITELIST:
         return True
     
     # Dynamic check: wallet must have 95%+ WR and 20+ positions for TOP PLAYS
+    # AND market must be open (not resolved)
     if prof:
         wr = getattr(prof, 'win_rate', 0) or 0
         pos = getattr(prof, 'total_positions', 0) or 0
         if wr >= TOP_PLAYS_CONFIG['min_wr'] and pos >= 20:
+            # Must be open market — skip resolved/settled positions for dynamic whales
+            if getattr(bw, 'accepting_orders', True) is not True:
+                return False
             return True
     
     return False

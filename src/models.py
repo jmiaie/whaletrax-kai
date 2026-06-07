@@ -82,23 +82,36 @@ class WalletStats:
 
 @dataclass
 class BigWin:
-    """A single trade event that qualifies as a big win."""
+    """A single trade event that qualifies as a big win.
+
+    is_open=True  → market still open, entry is live, detected from open positions API.
+    is_open=False → market resolved, position was closed, detected from closed positions API.
+    
+    Both paths feed the same alerting flow. Closed positions are stats-only; open
+    positions are the primary real-time detection signal.
+    """
 
     wallet: str
     display_name: str
     market_question: str
     outcome: str
-    profit_usdc: float
-    roi_pct: float
-    trade_size_usdc: float
-    timestamp: int
+    profit_usdc: float          # realized P&L (for closed) or entry-cost estimate (for open)
+    roi_pct: float             # entry cost ROI %
+    trade_size_usdc: float    # cost basis
+    timestamp: int            # when the position was opened
     market_id: str = ""
     trade_id: str = ""
     end_date: str = ""
-    avg_price: float = 0.0
+    avg_price: float = 0.0     # entry price in dollars (e.g. 0.50 = 50¢)
+    market_slug: str = ""     # market slug from Polymarket (e.g. "atp-cobolli-zverev-2026-06-07")
+    is_open: bool = True       # True = still active, False = closed/resolved
+    current_price: float = 0.0 # CLOB price at detection time (for open positions)
+    unrealized_pnl: float = 0.0# mark-to-market P&L (current_value - cost_basis)
     win_rate_30d: float = 0.0   # 30-day win rate
-    win_rate: float = 0.0    # lifetime win rate
-    win_streak: int = 0      # consecutive wins (most recent first)
+    win_rate: float = 0.0      # lifetime win rate
+    win_streak: int = 0        # consecutive wins (most recent first)
+    inverse_candidate: bool = False
+    inverse_reason: str = ""
 
 
 @dataclass
