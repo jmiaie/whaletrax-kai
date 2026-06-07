@@ -1039,6 +1039,7 @@ def bw_from_item(item):
     clob = item.get('_clob_enriched', {})
     bw.accepting_orders    = clob.get('accepting_orders', item.get('accepting_orders', True))
     bw.yes_price          = clob.get('yes_price', item.get('yes_price', 0))
+    bw.no_price           = clob.get('no_price', item.get('no_price', 0))
     bw.geo_available      = clob.get('geo_available', item.get('geo_available', 'UNKNOWN'))
     bw.game_start_time    = clob.get('game_start_time', item.get('game_start_time', ''))
     bw.market_slug       = clob.get('market_slug', item.get('market_slug', ''))
