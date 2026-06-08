@@ -55,14 +55,24 @@ def validate_and_enrich(bw):
     winner = ''
     for t in tokens:
         p = float(t.get('price', 0) or 0)
-        o = str(t.get('outcome', '') or '')
+        o = str(t.get('outcome', '') or '').strip()
         w = bool(t.get('winner', False))
-        if p > 0.5:  # YES side
+        # Use outcome string as primary key — "Yes" → yes_price, "No" → no_price
+        # For team-name markets (neither "Yes" nor "No"), fall back to price heuristic
+        if o == 'Yes':
             yes_price = p
             yes_outcome = o
-        else:       # NO side
+        elif o == 'No':
             no_price = p
             no_outcome = o
+        else:
+            # Team-name or exotic market — use price level as fallback heuristic
+            if p > 0.5 and yes_price is None:
+                yes_price = p
+                yes_outcome = o
+            elif p <= 0.5 and no_price is None:
+                no_price = p
+                no_outcome = o
         if w:
             winner = o
 
