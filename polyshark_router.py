@@ -552,8 +552,15 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
     # For open positions: show the whale's current outcome price as "Now:"
     # YES bet → show YES price. NO bet → show NO price.
     # Never show the opposite outcome's price (which was the previous bug).
+    # For team-name outcomes (e.g., "Chicago Cubs"), use curPrice to determine side:
+    #   curPrice >= 0.5 → whale is on YES side; curPrice < 0.5 → whale is on NO side
     side_raw = str(getattr(bw, 'outcome', '') or '').upper()
-    side = 'YES' if side_raw not in ('DOWN', 'NO') else 'NO'
+    if side_raw in ('YES', 'NO', 'DOWN'):
+        side = 'YES' if side_raw not in ('DOWN', 'NO') else 'NO'
+    else:
+        # Team-name market: determine side from curPrice
+        cur_p = float(getattr(bw, 'current_price', 0) or 0)
+        side = 'YES' if cur_p >= 0.5 else 'NO'
     if is_open:
         if side == 'YES':
             now_price = getattr(bw, 'yes_price', 0) or getattr(bw, 'current_price', 0)
