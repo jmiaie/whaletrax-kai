@@ -1164,16 +1164,31 @@ LB_STATE_FILE = Path('/tmp/whaletrax_lb_rank_state.json')
 def _check_leaderboard_changes():
     try:
         entries = pm.get_leaderboard(limit=20)
-        lb = {str(e.get('proxyWallet','')).lower(): {'rank': int(e.get('rank',0)), 'vol': float(e.get('vol',0)), 'name': e.get('userName','')} for e in entries if e.get('proxyWallet')}
+        lb = {}
+        for e in entries:
+            if not e.get('proxyWallet'):
+                continue
+            raw_name = e.get('userName', '') or ''
+            # Filter out address lookalikes and timestamp suffixes (e.g. "0x...-1759935795465")
+            import re
+            if re.match(r'^0x[a-fA-F0-9]{40}-\d+$', raw_name):
+                raw_name = ''  # treat as anonymous — don't show address-gone-wrong
+            vol = float(e.get('vol', 0) or 0)
+            lb[str(e.get('proxyWallet', '')).lower()] = {'rank': int(e.get('rank', 0)), 'vol': vol, 'name': raw_name}
         prev_raw = json.loads(LB_STATE_FILE.read_text()).get('wallets', {}) if LB_STATE_FILE.exists() else {}
         alerts = []
         for addr, info in lb.items():
             if addr not in prev_raw:
+                # Skip $0 volume entries — no meaningful signal
+                if info['vol'] <= 0:
+                    continue
                 badge = WATCH_LABEL if addr == WATCH_WALLET else '\U0001f525 NEW LEADERBOARD ENTRY'
-                alerts.append(badge + '\nRank #' + str(info['rank']) + ' | ' + (info['name'] or addr[:10]) + '\nVol: $' + str(int(info['vol'])))
+                name = info['name'] or addr[:10]
+                alerts.append(badge + '\nRank #' + str(info['rank']) + ' | ' + name + '\nVol: $' + str(int(info['vol'])))
         for addr, pinfo in prev_raw.items():
             if addr not in lb:
-                alerts.append('\U0001f6ab DROPPED: #' + str(pinfo['rank']) + ' | ' + (pinfo.get('name') or addr[:10]))
+                name = pinfo.get('name', '') or addr[:10]
+                alerts.append('\U0001f6ab DROPPED: #' + str(pinfo['rank']) + ' | ' + name)
         if alerts:
             text = '\U0001f4cb LEADERBOARD UPDATE\n\n' + '\n\n'.join(alerts[:5])
             send(CHANNELS['alert'], text)
