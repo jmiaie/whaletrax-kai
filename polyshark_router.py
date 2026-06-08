@@ -164,7 +164,7 @@ ESPORTS_KW    = [
     'tundra','gaimin gladiators','betboom','seoul dynasty','shanghai dragons','nyxl',
     'valiant','guangzhou charge','fusion','mayette','mayhem','outlaws','spitfire',
     'defiant','uprising','reign','fuel','gladiators','vanguard','seoul infernal',
-    'bds','nrg','moist','giants','renault vitalite','atlanta faze','optic texas',
+    'bds','nrg','moist','renault vitalite','atlanta faze','optic texas',
     'thieves','subliners','ultra','surge','rokr','valorant champions','esports event',
     'esports tournament','overwatch',
 ]
@@ -770,13 +770,21 @@ def process_queue(state):
         pro_ready  = (now - queued_at) >= PRO_DELAY
 
         # Pro channel — fire once when ready (3-min delay)
-        if pro_ready and not item.get('pro_sent'):
-            item_hash = f"{item.get('market_id','')}_{item.get('wallet','')}"
-            if item.get('_fired_hash') == item_hash:
-                log.warning(f'DUPLICATE PRO FIRE BLOCKED: {item["question"][:40]}')
+        # Block re-send to PRO if this market already went to PRO from another wallet
+        market_id = item.get('market_id', '')
+        if state.get('pro_sent_markets', []):
+            if market_id in state.get('pro_sent_markets', []):
+                log.info(f'PRO duplicate market blocked: {item["question"][:40]}')
                 item['pro_sent'] = True
                 dirty = True
                 continue
+
+        item_hash = f"{market_id}_{item.get('wallet','')}"
+        if item.get('_fired_hash') == item_hash:
+            log.warning(f'DUPLICATE PRO FIRE BLOCKED: {item["question"][:40]}')
+            item['pro_sent'] = True
+            dirty = True
+            continue
             bw = bw_from_item(item)
             if bw is None:
                 log.info(f'PRO filtered (resolved/null): {item["question"][:40]}')
@@ -859,6 +867,10 @@ def process_queue(state):
                 ok_alert = send(CHANNELS['alert'], card)
                 ok_pro   = send(CHANNELS['pro'], card)
                 log.info(f'Send result — alert={ok_alert}, pro={ok_pro}: {item["question"][:40]}')
+
+                # Track market → PRO so other wallets on same market don't also fire to PRO
+                if market_id not in state.get('pro_sent_markets', []):
+                    state.setdefault('pro_sent_markets', []).append(market_id)
 
                 # Auto-route to TOP PLAYS US: top-tier wallets, entry < 60¢, market OPEN
                 # HARD GATE: resolved plays (accepting_orders=False) never go to TOP PLAYS
