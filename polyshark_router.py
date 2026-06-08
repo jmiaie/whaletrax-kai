@@ -675,12 +675,17 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
     trader = f'🌊 <a href="https://polymarket.com/profile/{wallet}">{abbrev}</a> 🐋{geo_badge}'
 
     end_date = getattr(bw, 'end_date', '') or ''
+    # O: = when the whale opened the position (trade date, or queued_at as fallback)
+    # C: = market close date (plain text, not a link)
     trade_ts = int(getattr(bw, 'timestamp', 0) or 0)
-    trade_date = dt.datetime.fromtimestamp(trade_ts, tz=dt.timezone.utc).strftime('%Y-%m-%d') if trade_ts else '—'
-    # Format: O: 06-02 | C: 2026-06-02 | 🏟️ game start time
-    # Format: O: 06-02 | C: 06-02-2026
-    open_short = trade_date[5:10] if trade_date and len(trade_date) >= 10 else trade_date  # MM-DD
-    close_fmt = end_date[:10]  # YYYY-MM-DD if end_date and len(end_date) >= 10 else '—'
+    if trade_ts > 0:
+        trade_date = dt.datetime.fromtimestamp(trade_ts, tz=dt.timezone.utc).strftime('%Y-%m-%d')
+    else:
+        # Fallback to queued_at timestamp for positions where Polymarket doesn't expose trade time
+        queued_at = getattr(bw, 'queued_at', '') or ''
+        trade_date = queued_at[:10] if len(queued_at) >= 10 else '—'
+    open_short = trade_date[5:10] if trade_date and len(trade_date) >= 10 else '—'
+    close_fmt = end_date[:10] if end_date and len(end_date) >= 10 else '—'
     if game_start_fmt:
         dates_line = f'📅 O: {open_short} | C: {close_fmt} | 🏟️ {game_start_fmt}'
     else:
@@ -1028,6 +1033,7 @@ def bw_from_item(item):
     bw.leaderboard_volume  = item.get('leaderboard_volume', 0)
     bw.outcome             = item.get('outcome','')
     bw.end_date            = item.get('end_date','')
+    bw.queued_at          = item.get('queued_at','')
     bw.avg_price           = item.get('avg_price', 0)
     bw.is_open             = item.get('is_open', False)   # True = open position, False = closed
     bw.current_price       = item.get('current_price', 0) # CLOB price at detection time
