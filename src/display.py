@@ -37,25 +37,26 @@ def show_leaderboard(wallets: list[WalletStats], top_n: Optional[int] = None) ->
         border_style="blue",
         expand=False,
     )
-    table.add_column("#", style="dim", width=4, justify="right")
-    table.add_column("Wallet / Name", style="white", min_width=20)
-    table.add_column("Profit (USDC)", justify="right", min_width=14)
-    table.add_column("Volume (USDC)", justify="right", min_width=14)
-    table.add_column("Trades", justify="right", width=8)
-    table.add_column("Win Rate", justify="right", width=9)
-    table.add_column("Net ROI", justify="right", width=9)
-    table.add_column("Big Wins", justify="right", width=9)
+    table.add_column("#", style="dim", width=3, justify="right")
+    table.add_column("Wallet / Name", style="white", min_width=18)
+    table.add_column("P/L", justify="right", min_width=13)
+    table.add_column("Trades", justify="right", width=6)
+    table.add_column("W/L", justify="right", width=7)
+    table.add_column("WR", justify="right", width=6)
+    table.add_column("Net ROI", justify="right", width=7)
+    table.add_column("Big Wins", justify="right", width=8)
 
     for w in wallets:
         label = w.display_name if w.display_name else w.wallet[:WALLET_TRUNCATE_LEN] + "…"
+        wl = f"{w.winning_trades}/{w.losing_trades}" if w.winning_trades or w.losing_trades else "—"
         table.add_row(
             str(w.rank or "—"),
             label,
             Text(fmt_usdc(w.total_profit_usdc), style=profit_style(w.total_profit_usdc)),
-            f"${w.total_volume_usdc:,.0f}",
-            str(w.total_trades),
+            str(w.total_trades) if w.total_trades else "—",
+            wl,
             fmt_pct(w.win_rate_pct) if w.win_rate_pct else "—",
-            Text(fmt_pct(w.net_roi_pct), style=profit_style(w.net_roi_pct)),
+            Text(fmt_pct(w.net_roi_pct), style=profit_style(w.net_roi_pct)) if w.net_roi_pct else "—",
             str(w.big_win_count) if w.big_win_count else "—",
         )
 

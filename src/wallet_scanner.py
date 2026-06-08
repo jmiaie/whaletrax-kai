@@ -208,7 +208,7 @@ def _get_internal_whale_records(top_n: int | None = None) -> list[WalletStats]:
         s.avg_roi_pct = float(r['avg_roi'] or 0)
         s.biggest_win_usdc = float(r['best_roi_trade'] or 0)
         s.big_win_count = 0
-        s.total_volume_usdc = float(r['pnl_30d'] or 0)
+        # total_volume_usdc is not tracked in internal_whale_wallets — leave at 0 so net_roi shows "—"
         setattr(s, 'win_rate_30d', float(r['wr_30d'] or 0))
         setattr(s, 'pnl_30d', float(r['pnl_30d'] or 0))
         out.append(s)
@@ -242,8 +242,10 @@ def scan_leaderboard(top_n: int = config.LEADERBOARD_TOP_N) -> list[WalletStats]
             total_trades=entry.trades,
             rank=entry.rank,
         )
+        # net_roi_pct = profit/volume — only compute when we have real volume data
         if stats.total_volume_usdc > 0:
-            stats.win_rate_pct = 0.0
+            stats.net_roi_pct = (stats.total_profit_usdc / stats.total_volume_usdc) * 100
+        # if volume is 0 the public API didn't provide it — leave net_roi_pct at 0.0 (shows "—")
         results.append(stats)
 
     return results

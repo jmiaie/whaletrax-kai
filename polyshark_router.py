@@ -566,6 +566,23 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
             now_price = getattr(bw, 'yes_price', 0) or getattr(bw, 'current_price', 0)
         else:
             now_price = getattr(bw, 'no_price', 0) or getattr(bw, 'current_price', 0)
+            # NO bet but no_price cached — fetch live NO price from CLOB
+            if now_price == 0 and getattr(bw, 'market_id', None):
+                try:
+                    import urllib.request, json
+                    url = f"https://clob.polymarket.com/markets/{bw.market_id}"
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        data = json.loads(resp.read())
+                    for tok in data.get('tokens', []):
+                        if str(tok.get('outcome', '')).lower() == 'no':
+                            p = float(tok.get('price', 0) or 0)
+                            if p > 0:
+                                bw.no_price = p
+                                now_price = p
+                                break
+                except Exception:
+                    pass
         if now_price > 0:
             entry_pct = entry_px * 100
             cur_pct = now_price * 100
@@ -616,9 +633,6 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
     # pos_30d: use bw.pos_30d only if it's a meaningful value (not 0 from unset fallback)
     _bw_pos_30 = getattr(bw, 'pos_30d', None)
     pos_30 = int(_bw_pos_30) if (_bw_pos_30 is not None and _bw_pos_30 > 0) else int(getattr(prof, '_positions_30d', 0) if prof else 0)
-    # pos_30d: use bw.pos_30d only if it's a meaningful value (not 0 from unset fallback)
-    _bw_pos_30 = getattr(bw, 'pos_30d', None)
-    pos_30 = int(_bw_pos_30) if (_bw_pos_30 is not None and _bw_pos_30 > 0) else int(getattr(prof, '_positions_30d', 0) if prof else 0)
 
     # Jeff's rule: new wallets (≤30 days old) have identical 30D and lifetime stats.
     # Consolidate to one clean line instead of showing redundant "30Day" + "Lifetime".
@@ -627,10 +641,6 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
     inverse_candidate = bool(getattr(bw, 'inverse_candidate', False))
 
     if inverse_candidate:
-        inverse_reason = str(getattr(bw, 'inverse_reason', '') or '')
-        recent_line = f'🔁 Inverse watch: {fmt_wr(wr_30, wins=wins_30, total=pos_30) if pos_30 >= MIN_POS_30D else "—"} | — P/L'
-        lifetime_line = f'⚠️ Fade candidate: {fmt_wr(wr_lt, wins=wins_lt, total=pos_lt)} | — P/L'
-        combined_line = None
         inverse_reason = str(getattr(bw, 'inverse_reason', '') or '')
         recent_line = f'🔁 Inverse watch: {fmt_wr(wr_30, wins=wins_30, total=pos_30) if pos_30 >= MIN_POS_30D else "—"} | — P/L'
         lifetime_line = f'⚠️ Fade candidate: {fmt_wr(wr_lt, wins=wins_lt, total=pos_lt)} | — P/L'
