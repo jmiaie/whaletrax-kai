@@ -692,7 +692,7 @@ def format_card(bw, tier='PRO', channel_id=None, free_card=False):
         dates_line = f'📅 O: {open_short} | C: {close_fmt}'
 
     # Re-check CLOB at format time: if market is no longer accepting orders, it's RESOLVED
-    is_resolved = not getattr(bw, 'accepting_orders', True)  # True = open by default
+    is_resolved = getattr(bw, 'closed', False) or not getattr(bw, 'accepting_orders', True)
     if is_resolved:
         trade_open_line = '✅ RESOLVED — position closed'
         # For resolved markets: use wallet profile's total_pnl as reference P&L
@@ -1044,6 +1044,7 @@ def bw_from_item(item):
     # This ensures accepting_orders, yes_price, geo_available are set correctly for TOP PLAYS gating
     clob = item.get('_clob_enriched', {})
     bw.accepting_orders    = clob.get('accepting_orders', item.get('accepting_orders', True))
+    bw.closed              = clob.get('closed', item.get('closed', False))
     bw.yes_price          = clob.get('yes_price', item.get('yes_price', 0))
     bw.no_price           = clob.get('no_price', item.get('no_price', 0))
     bw.geo_available      = clob.get('geo_available', item.get('geo_available', 'UNKNOWN'))
@@ -1238,6 +1239,7 @@ def run():
             'unrealized_pnl': getattr(bw, 'unrealized_pnl', 0),
             'percentPnl': getattr(bw, 'percentPnl', 0),
             'redeemable': getattr(bw, 'redeemable', False),
+            'closed': getattr(bw, 'closed', False),
         }
         ingest_alert(bw_dict, cats[0])
 
@@ -1249,6 +1251,7 @@ def run():
                 bw.yes_price = enriched.get('yes_price', bw.current_price)
                 bw.no_price  = enriched.get('no_price', 0)
                 bw.accepting_orders = enriched.get('accepting_orders', True)
+                bw.closed = enriched.get('closed', False)
                 bw.game_start_fmt = enriched.get('game_start_fmt', '')
                 bw.market_slug = enriched.get('market_slug', '')
                 bw.geo_available = enriched.get('geo_available', 'UNKNOWN')
