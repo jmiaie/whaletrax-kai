@@ -301,6 +301,30 @@ def send(cid, text, pause=True):
 
 send._last_send = 0.0
 
+# QC gate — import after send is defined so qc.py can be loaded
+try:
+    from qc import qc_check_card
+except Exception as e:
+    log.warning(f'QC module load failed: {e}')
+    qc_check_card = None
+
+def send_card(cid, bw, card_text: str, tier: str) -> bool:
+    """Send a card through the QC gate. Returns True on success, False on fail/pause."""
+    if not card_text:
+        log.warning(f'send_card skipped: empty text for {cid}')
+        return False
+    if qc_check_card is None:
+        # QC unavailable — send anyway with a warning
+        log.warning('QC module unavailable — sending without quality gate')
+        return send(cid, card_text)
+    pass_card, final_card, issues = qc_check_card(bw, card_text, tier)
+    if not pass_card:
+        log.warning(f'QC blocked send to {cid}: {issues}')
+        return False
+    if final_card != card_text:
+        log.info(f'QC: sending auto-fixed card to {cid}')
+    return send(cid, final_card)
+
 def detect_categories_with_confidence(question: str):
     """
     Return (cats, best_cat, best_score) where cats=all matched categories,
@@ -867,7 +891,7 @@ def process_queue(state):
                 if info and not info.get('accepting_orders', True):
                     resolved_card = format_card(bw, 'pro', CHANNELS['alert'])
                     if resolved_card:
-                        send(CHANNELS['alert'], resolved_card)
+                        send_card(CHANNELS['alert'], bw, resolved_card, 'pro')
                         # DO NOT send to PRO or TOP PLAYS — resolved plays are curated-only
                     item['_fired_hash'] = item_hash
                     item['pro_sent'] = True
@@ -881,8 +905,8 @@ def process_queue(state):
             # Jeff manually forwards best cards from PRO → Polyshark TOP PLAYS US
             card = format_card(bw, 'pro', CHANNELS['alert'])
             if card:
-                ok_alert = send(CHANNELS['alert'], card)
-                ok_pro   = send(CHANNELS['pro'], card)
+                ok_alert = send_card(CHANNELS['alert'], bw, card, 'pro')
+                ok_pro   = send_card(CHANNELS['pro'], bw, card, 'pro')
                 log.info(f'Send result — alert={ok_alert}, pro={ok_pro}: {item["question"][:40]}')
 
                 # Track market → PRO so other wallets on same market don't also fire to PRO
@@ -900,7 +924,7 @@ def process_queue(state):
                         if is_top_play(bw, tp_prof):
                             tp_card = format_card(bw, 'pro', CHANNELS['top_plays'])
                             if tp_card:
-                                ok_top = send(CHANNELS['top_plays'], tp_card)
+                                ok_top = send_card(CHANNELS['top_plays'], bw, tp_card, 'top_plays')
                                 log.info(f'TOP PLAYS auto-routed: {item["question"][:40]}')
                 except Exception as e:
                     log.warning(f'TOP PLAYS routing error: {e}')
@@ -917,7 +941,7 @@ def process_queue(state):
                         if wr_lt >= 90 or wr_30 >= 90:
                             w_card = format_card(bw, 'pro', CHANNELS['world'])
                             if w_card:
-                                ok_world = send(CHANNELS['world'], w_card)
+                                ok_world = send_card(CHANNELS['world'], bw, w_card, 'world')
                                 if ok_world:
                                     item['world_sent'] = True
                                     log.info(f'World channel fired (WR {wr_lt:.0f}%/{wr_30:.0f}%): {item["question"][:40]}')
@@ -971,7 +995,7 @@ def process_queue(state):
                                     continue
                             cat_card = format_card(bw_cat, 'pro', cat_channel)
                             if cat_card:
-                                send(cat_channel, cat_card)
+                                send_card(cat_channel, bw_cat, cat_card, f'cat_{cat}')
                                 log.info(f'Category [{cat}] fired: {item["question"][:40]}')
                         except Exception as e:
                             log.warning(f'Category [{cat}] send error: {e}')
@@ -1009,7 +1033,7 @@ def process_queue(state):
 
                     free_card_text = format_card(bw_free, 'free', CHANNELS.get('free'), free_card=True)
                     if free_card_text:
-                        send(CHANNELS['free'], free_card_text)
+                        send_card(CHANNELS['free'], bw_free, free_card_text, 'free')
                         log.info(f'FREE fired: {item["question"][:40]}')
             except Exception as e:
                 log.warning(f'Free channel error: {e}')
