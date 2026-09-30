@@ -1,5 +1,8 @@
 # WhaleTrax 🐋
 
+> **Status (2026-09-30):** public **Kai satellite** of WhaleTrax — stalled MVP. Canonical product: private [`jmiaie/whaletrax`](https://github.com/jmiaie/whaletrax). See [`STATUS.md`](STATUS.md) and [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md). No invented sniping PnL.
+
+
 **WhaleTrax** is a Polymarket blockchain wallet and big-win scanner that identifies highly profitable wallets, plays, and traders on the [Polymarket](https://polymarket.com) prediction market platform.
 
 ---
