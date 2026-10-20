@@ -162,6 +162,27 @@ whaletrax/
 
 ---
 
+## Polyshark webhook (paid Telegram signal channels)
+
+> **Disclaimer:** Polyshark signals and all WhaleTrax output are for informational and educational purposes only and are **not financial, investment, or trading advice**. Prediction-market trading carries risk of loss; do your own research. Past performance of any wallet or signal does not guarantee future results.
+> <!-- TODO(owner): review this disclaimer wording before relying on it; it is a standard short notice, not legal advice. -->
+
+`polyshark_webhook.py` receives Stripe and PayPal payment webhooks and grants access to paid Polyshark Telegram channels. Run it with `python run_webhook_server.py`; it checks configuration at startup and exits with a clear message if something required is missing. Both endpoints **fail closed**: unverified events never grant access.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `STRIPE_WEBHOOK_SECRET` | yes | Stripe endpoint signing secret (`whsec_...`). Without it `/webhook/stripe` returns 503. Requests without a valid `Stripe-Signature` (HMAC-SHA256, 5-minute tolerance) get 400. |
+| `POLYSHARK_BOT_TOKEN` | yes* | Telegram bot token. *Or set `POLYSHARK_TOKEN_FILE` to a file containing a `TOKEN=...` line. |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` | to enable PayPal | Each PayPal event is checked with PayPal's `verify-webhook-signature` API. If any of these is unset, `/webhook/paypal` refuses **all** events (400) and logs why. |
+| `PAYPAL_API_BASE` | no | Defaults to `https://api-m.paypal.com`; use `https://api-m.sandbox.paypal.com` for sandbox. |
+| `POLYSHARK_DB_PATH`, `POLYSHARK_WEBHOOK_LOG` | no | Override the webhook's SQLite path and log file. |
+
+To enable PayPal: create a webhook in the PayPal developer dashboard pointing at `/webhook/paypal`, copy its **Webhook ID** into `PAYPAL_WEBHOOK_ID`, set the REST app's client ID/secret, and send a sandbox test event first.
+
+Tests (no network, no credentials): `python -m unittest test_webhook -v`
+
+---
+
 ## WalletHound 🐕
 
 **WalletHound** is WhaleTrax's advanced wallet-tracking feature set that goes beyond basic leaderboard scanning. It identifies three distinct categories of impressive Polymarket wallets:
