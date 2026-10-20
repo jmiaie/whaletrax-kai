@@ -22,7 +22,7 @@ except ImportError:
     import requests
 
 # Bot token for @jefe_swarm2bot (WhaleTrax broadcast bot)
-BOT_TOKEN = "8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg"
+BOT_TOKEN = os.environ.get("POLYSHARK_BOT_TOKEN", "")  # set in .env; never hard-code
 # Channel ID for Polyshark broadcasts
 CHANNEL_ID = "-1003786930778"
 # Legacy sender disabled: direct broadcast channel routing is no longer used here

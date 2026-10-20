@@ -48,9 +48,9 @@ def _load_token():
                 k, v = line.split('=', 1)
                 if k in ('TOKEN', 'BOT_TOKEN', 'WHALETRAX_BOT_TOKEN'):
                     return v.strip()
-    return os.getenv('WHALETRAX_BOT_TOKEN', '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg')
+    return os.getenv('WHALETRAX_BOT_TOKEN', '')
 
-TOKEN   = _load_token() or '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'
+TOKEN   = _load_token() or ''
 CHAT_ID = '-1003786930778'
 MAX_ALERTS_RUN = 5          # max alerts per run to avoid flooding
 POLL_TOP_N     = 20         # leaderboard wallets to scan

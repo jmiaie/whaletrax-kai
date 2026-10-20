@@ -11,7 +11,7 @@ from alerts.polyshark_alert import make_trade_alert_card
 
 DB_PATH = '/home/ubuntu/.openclaw/workspace/ompa_vault/org/polyshark-alerts/polyshark.db'
 # Token for @oc_a7bot (PolysharkBot) — active in Alert Group
-BOT_TOKEN = '8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg'
+BOT_TOKEN = os.environ.get('POLYSHARK_BOT_TOKEN', '')  # set in .env; never hard-code
 
 def mask_address(addr):
     if not addr: return '0x....'
