@@ -6,7 +6,7 @@ Runs whaletrax_watcher.py every 15 minutes with token fix.
 import subprocess, time, sys, os
 from pathlib import Path
 
-TOKEN = "8678199814:AAECmOod8cH3GqKqgKnc7NdcmR1bAif2BBg"
+TOKEN = os.environ.get("WHALETRAX_BOT_TOKEN", "")  # set in .env; never hard-code
 INTERVAL = 15 * 60  # 15 minutes
 WD = Path("/home/ubuntu/.openclaw/workspace/repos/whaletrax")
 LOG = Path("/tmp/whaletrax_watcher.log")

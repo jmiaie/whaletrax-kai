@@ -3,7 +3,8 @@ from pathlib import Path
 from src.polymarket_client import get_leaderboard
 
 LEADERBOARD_STATE_FILE = '/tmp/whaletrax_leaderboard_state.json'
-WATCH_KEY = '0x63a51cbb37341837b873bc29d05f482bc2988e33'.lower()
+# Wallet address that gets the HIGH-FREQ WINNING WHALE badge (public on-chain address, not a credential).
+WATCH_KEY = os.environ.get('WATCH_KEY', '0x63a51cbb37341837b873bc29d05f482bc2988e33').lower()
 
 def load_prev_state():
     if os.path.exists(LEADERBOARD_STATE_FILE):

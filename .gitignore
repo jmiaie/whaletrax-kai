@@ -10,3 +10,7 @@ build/
 __pycache__/
 *.pyc
 
+
+# local secrets
+.env.*
+!.env.example
